@@ -1,11 +1,12 @@
 'use client';
 
-import { useEffect, useRef, RefObject } from 'react';
-import { Clip, ViewMode } from '@/types';
+import { useEffect, useRef, RefObject, useCallback } from 'react';
+import { Clip, ViewMode, VideoSource, SourceId } from '@/types';
 import { hexToRgb } from '@/lib/utils';
 
 interface VideoPlayerProps {
-  videoFile: File;
+  activeSource: VideoSource | null;
+  sourcesById: Record<SourceId, VideoSource>;
   videoRef: RefObject<HTMLVideoElement | null>;
   canvasRef: RefObject<HTMLCanvasElement | null>;
   viewMode: ViewMode;
@@ -15,8 +16,16 @@ interface VideoPlayerProps {
   onSegmentChange: (index: number) => void;
 }
 
+const getSegmentSourceId = (clip: Clip | null, segmentIndex: number): SourceId | null => {
+  if (!clip) return null;
+  const segment = clip.segments[segmentIndex] ?? clip.segments[0];
+  if (!segment) return clip.sourceId ?? null;
+  return segment.sourceId ?? clip.sourceId ?? null;
+};
+
 export default function VideoPlayer({
-  videoFile,
+  activeSource,
+  sourcesById,
   videoRef,
   canvasRef,
   viewMode,
@@ -26,15 +35,77 @@ export default function VideoPlayer({
   onSegmentChange,
 }: VideoPlayerProps) {
   const renderIntervalRef = useRef<number | null>(null);
+  const loadedSourceIdRef = useRef<SourceId | null>(null);
+  const pendingLoadHandlerRef = useRef<(() => void) | null>(null);
+
+  const cleanupPendingLoadHandler = useCallback(() => {
+    const video = videoRef.current;
+    if (video && pendingLoadHandlerRef.current) {
+      video.removeEventListener('loadeddata', pendingLoadHandlerRef.current);
+      pendingLoadHandlerRef.current = null;
+    }
+  }, [videoRef]);
 
   useEffect(() => {
-    if (videoRef.current && videoFile) {
-      const url = URL.createObjectURL(videoFile);
-      videoRef.current.src = url;
+    const video = videoRef.current;
+    if (!video || viewMode !== 'edit') return;
 
-      return () => URL.revokeObjectURL(url);
+    cleanupPendingLoadHandler();
+
+    if (activeSource?.url) {
+      if (loadedSourceIdRef.current !== activeSource.id) {
+        video.pause();
+        video.src = activeSource.url;
+        loadedSourceIdRef.current = activeSource.id;
+      }
+    } else if (loadedSourceIdRef.current) {
+      video.pause();
+      video.removeAttribute('src');
+      video.load();
+      loadedSourceIdRef.current = null;
     }
-  }, [videoFile, videoRef]);
+  }, [activeSource, viewMode, videoRef, cleanupPendingLoadHandler]);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video || viewMode !== 'preview' || !currentPreviewClip) return;
+
+    const targetSourceId = getSegmentSourceId(currentPreviewClip, currentSegmentIndex);
+    if (!targetSourceId) return;
+    const source = sourcesById[targetSourceId];
+    if (!source?.url) return;
+
+    const segment = currentPreviewClip.segments[currentSegmentIndex] ?? currentPreviewClip.segments[0];
+    if (!segment) return;
+
+    const needsSwap = loadedSourceIdRef.current !== targetSourceId;
+
+    if (needsSwap) {
+      cleanupPendingLoadHandler();
+      const handleLoadedData = () => {
+        video.currentTime = segment.start;
+        video.play();
+        cleanupPendingLoadHandler();
+      };
+      pendingLoadHandlerRef.current = handleLoadedData;
+      video.addEventListener('loadeddata', handleLoadedData);
+      video.pause();
+      video.src = source.url;
+      loadedSourceIdRef.current = targetSourceId;
+    } else {
+      video.currentTime = segment.start;
+      video.play();
+    }
+
+    return cleanupPendingLoadHandler;
+  }, [
+    viewMode,
+    currentPreviewClip,
+    currentSegmentIndex,
+    sourcesById,
+    videoRef,
+    cleanupPendingLoadHandler,
+  ]);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -43,28 +114,39 @@ export default function VideoPlayer({
     const handleTimeUpdate = () => {
       if (viewMode === 'preview' && currentPreviewClip) {
         const segment = currentPreviewClip.segments[currentSegmentIndex];
+        if (!segment) return;
 
-        // Check if we need to move to next segment
         if (video.currentTime >= segment.end) {
           const nextIndex = currentSegmentIndex + 1;
           if (nextIndex >= currentPreviewClip.segments.length) {
-            // Loop back to start
             onSegmentChange(0);
-            video.currentTime = currentPreviewClip.segments[0].start;
+            const firstSegment = currentPreviewClip.segments[0];
+            if (firstSegment) {
+              const firstSourceId = getSegmentSourceId(currentPreviewClip, 0);
+              if (firstSourceId && firstSourceId === loadedSourceIdRef.current) {
+                video.currentTime = firstSegment.start;
+              }
+            }
           } else {
-            // Move to next segment
+            const nextSegment = currentPreviewClip.segments[nextIndex];
+            const nextSourceId = nextSegment.sourceId ?? currentPreviewClip.sourceId ?? null;
+            const currentSourceId = segment.sourceId ?? currentPreviewClip.sourceId ?? null;
+
             onSegmentChange(nextIndex);
-            video.currentTime = currentPreviewClip.segments[nextIndex].start;
+            if (nextSourceId && currentSourceId === nextSourceId) {
+              video.currentTime = nextSegment.start;
+            }
           }
         }
       }
     };
 
     video.addEventListener('timeupdate', handleTimeUpdate);
-    return () => video.removeEventListener('timeupdate', handleTimeUpdate);
+    return () => {
+      video.removeEventListener('timeupdate', handleTimeUpdate);
+    };
   }, [videoRef, viewMode, currentPreviewClip, currentSegmentIndex, onSegmentChange]);
 
-  // Canvas rendering for text overlays
   useEffect(() => {
     const video = videoRef.current;
     const canvas = canvasRef.current;
@@ -82,10 +164,8 @@ export default function VideoPlayer({
       if (!ctx) return;
 
       const render = () => {
-        // Draw video frame
         ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-        // Draw text overlay
         if (currentPreviewClip?.textOverlay) {
           drawTextOverlay(ctx, canvas, currentPreviewClip.textOverlay);
         }
