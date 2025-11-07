@@ -11,6 +11,7 @@ interface ControlsProps {
   viewMode: ViewMode;
   currentPreviewClip: Clip | null;
   currentSegmentIndex: number;
+  videoDuration: number;
   onSetTrimStart: () => void;
   onSetTrimEnd: () => void;
   onCreateClip: () => void;
@@ -24,6 +25,7 @@ export default function Controls({
   viewMode,
   currentPreviewClip,
   currentSegmentIndex,
+  videoDuration,
   onSetTrimStart,
   onSetTrimEnd,
   onCreateClip,
@@ -31,7 +33,6 @@ export default function Controls({
 }: ControlsProps) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
-  const [videoDuration, setVideoDuration] = useState(0);
 
   const getPreviewElapsedTime = (
     clip: Clip,
@@ -76,43 +77,16 @@ export default function Controls({
       }
     };
 
-    const handleLoadedMetadata = () => {
-      const safeDuration = Number.isFinite(video.duration) ? video.duration : 0;
-      setVideoDuration(Math.max(0, safeDuration));
-    };
-
     video.addEventListener('play', handlePlay);
     video.addEventListener('pause', handlePause);
     video.addEventListener('timeupdate', handleTimeUpdate);
-    video.addEventListener('loadedmetadata', handleLoadedMetadata);
 
     return () => {
       video.removeEventListener('play', handlePlay);
       video.removeEventListener('pause', handlePause);
       video.removeEventListener('timeupdate', handleTimeUpdate);
-      video.removeEventListener('loadedmetadata', handleLoadedMetadata);
     };
   }, [videoRef, viewMode, currentPreviewClip, currentSegmentIndex]);
-
-  useEffect(() => {
-    const video = videoRef.current;
-    if (!video) {
-      setCurrentTime(0);
-      return;
-    }
-
-    if (viewMode === 'preview' && currentPreviewClip) {
-      const previewElapsed = getPreviewElapsedTime(
-        currentPreviewClip,
-        currentSegmentIndex,
-        video.currentTime
-      );
-      setCurrentTime(previewElapsed);
-    } else {
-      const safeCurrentTime = Number.isFinite(video.currentTime) ? video.currentTime : 0;
-      setCurrentTime(Math.max(0, safeCurrentTime));
-    }
-  }, [viewMode, currentPreviewClip, currentSegmentIndex, videoRef]);
 
   const durationValue =
     viewMode === 'preview' && currentPreviewClip ? currentPreviewClip.duration : videoDuration;

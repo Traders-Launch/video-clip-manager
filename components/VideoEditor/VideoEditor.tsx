@@ -14,11 +14,36 @@ const COUNTER_KEY = 'video-clip-manager-counter';
 
 export default function VideoEditor() {
   const [videoFile, setVideoFile] = useState<File | null>(null);
-  const [clips, setClips] = useState<Clip[]>([]);
+  const [clips, setClips] = useState<Clip[]>(() => {
+    if (typeof window === 'undefined') {
+      return [];
+    }
+
+    try {
+      const savedClips = localStorage.getItem(STORAGE_KEY);
+      return savedClips ? JSON.parse(savedClips) : [];
+    } catch (error) {
+      console.error('Failed to load clips from localStorage:', error);
+      return [];
+    }
+  });
   const [selectedClips, setSelectedClips] = useState<Set<number>>(new Set());
   const [trimStart, setTrimStart] = useState(0);
   const [trimEnd, setTrimEnd] = useState(0);
-  const [clipCounter, setClipCounter] = useState(1);
+  const [clipCounter, setClipCounter] = useState(() => {
+    if (typeof window === 'undefined') {
+      return 1;
+    }
+
+    try {
+      const savedCounter = localStorage.getItem(COUNTER_KEY);
+      return savedCounter ? parseInt(savedCounter, 10) || 1 : 1;
+    } catch (error) {
+      console.error('Failed to load clip counter from localStorage:', error);
+      return 1;
+    }
+  });
+  const [videoDuration, setVideoDuration] = useState(0);
   const [viewMode, setViewMode] = useState<ViewMode>('edit');
   const [currentPreviewClip, setCurrentPreviewClip] = useState<Clip | null>(null);
   const [currentSegmentIndex, setCurrentSegmentIndex] = useState(0);
@@ -27,23 +52,6 @@ export default function VideoEditor() {
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-
-  // Load clips from localStorage on mount
-  useEffect(() => {
-    try {
-      const savedClips = localStorage.getItem(STORAGE_KEY);
-      const savedCounter = localStorage.getItem(COUNTER_KEY);
-
-      if (savedClips) {
-        setClips(JSON.parse(savedClips));
-      }
-      if (savedCounter) {
-        setClipCounter(parseInt(savedCounter, 10));
-      }
-    } catch (error) {
-      console.error('Failed to load clips from localStorage:', error);
-    }
-  }, []);
 
   // Save clips to localStorage whenever they change
   useEffect(() => {
@@ -61,6 +69,7 @@ export default function VideoEditor() {
     setSelectedClips(new Set());
     setTrimStart(0);
     setTrimEnd(0);
+    setVideoDuration(0);
     setViewMode('edit');
     setCurrentPreviewClip(null);
   };
@@ -77,8 +86,12 @@ export default function VideoEditor() {
 
   const handleVideoMetadata = () => {
     if (videoRef.current) {
+      const duration = Number.isFinite(videoRef.current.duration)
+        ? videoRef.current.duration
+        : 0;
       setTrimStart(0);
-      setTrimEnd(videoRef.current.duration);
+      setTrimEnd(duration);
+      setVideoDuration(duration);
     }
   };
 
@@ -222,6 +235,7 @@ export default function VideoEditor() {
             viewMode={viewMode}
             currentPreviewClip={currentPreviewClip}
             currentSegmentIndex={currentSegmentIndex}
+            videoDuration={videoDuration}
             onTrimStartChange={setTrimStart}
             onTrimEndChange={setTrimEnd}
           />
@@ -229,15 +243,16 @@ export default function VideoEditor() {
           <Controls
             videoRef={videoRef}
             trimStart={trimStart}
-          trimEnd={trimEnd}
-          viewMode={viewMode}
-          currentPreviewClip={currentPreviewClip}
-          onSetTrimStart={() => setTrimStart(videoRef.current?.currentTime || 0)}
-          onSetTrimEnd={() => setTrimEnd(videoRef.current?.currentTime || 0)}
-          onCreateClip={createClip}
-          onExitPreview={exitPreviewMode}
-          currentSegmentIndex={currentSegmentIndex}
-        />
+            trimEnd={trimEnd}
+            viewMode={viewMode}
+            currentPreviewClip={currentPreviewClip}
+            videoDuration={videoDuration}
+            currentSegmentIndex={currentSegmentIndex}
+            onSetTrimStart={() => setTrimStart(videoRef.current?.currentTime || 0)}
+            onSetTrimEnd={() => setTrimEnd(videoRef.current?.currentTime || 0)}
+            onCreateClip={createClip}
+            onExitPreview={exitPreviewMode}
+          />
         </div>
 
         <ClipList
@@ -253,6 +268,7 @@ export default function VideoEditor() {
         />
 
         <TextOverlayModal
+          key={textModalOpen ? currentEditingClipId ?? 'new' : 'closed'}
           isOpen={textModalOpen}
           clipId={currentEditingClipId}
           clip={clips.find(c => c.id === currentEditingClipId)}

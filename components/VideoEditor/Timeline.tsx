@@ -10,6 +10,7 @@ interface TimelineProps {
   viewMode: ViewMode;
   currentPreviewClip: Clip | null;
   currentSegmentIndex: number;
+  videoDuration: number;
   onTrimStartChange: (value: number) => void;
   onTrimEndChange: (value: number) => void;
 }
@@ -21,6 +22,7 @@ export default function Timeline({
   viewMode,
   currentPreviewClip,
   currentSegmentIndex,
+  videoDuration,
   onTrimStartChange,
   onTrimEndChange,
 }: TimelineProps) {
@@ -47,7 +49,7 @@ export default function Timeline({
           : 0;
         setProgress(Math.max(0, Math.min(100, clipProgress)));
       } else {
-        const safeDuration = Number.isFinite(video.duration) && video.duration > 0 ? video.duration : 0;
+        const safeDuration = videoDuration > 0 ? videoDuration : 0;
         const baseProgress = safeDuration ? (video.currentTime / safeDuration) * 100 : 0;
         setProgress(Math.max(0, Math.min(100, baseProgress)));
       }
@@ -55,7 +57,7 @@ export default function Timeline({
 
     video.addEventListener('timeupdate', handleTimeUpdate);
     return () => video.removeEventListener('timeupdate', handleTimeUpdate);
-  }, [videoRef, viewMode, currentPreviewClip, currentSegmentIndex]);
+  }, [videoRef, viewMode, currentPreviewClip, currentSegmentIndex, videoDuration]);
 
   const handleTrackClick = (e: React.MouseEvent<HTMLDivElement>) => {
     if (!trackRef.current || !videoRef.current) return;
@@ -69,11 +71,8 @@ export default function Timeline({
       const segmentDuration = Math.max(segment.end - segment.start, 0);
       videoRef.current.currentTime = segment.start + (percent * segmentDuration);
     } else {
-      const duration = Number.isFinite(videoRef.current.duration) && videoRef.current.duration > 0
-        ? videoRef.current.duration
-        : null;
-      if (!duration) return;
-      videoRef.current.currentTime = percent * duration;
+      if (videoDuration <= 0) return;
+      videoRef.current.currentTime = percent * videoDuration;
     }
   };
 
@@ -93,12 +92,9 @@ export default function Timeline({
       let percent = (e.clientX - rect.left) / rect.width;
       percent = Math.max(0, Math.min(1, percent));
 
-      const duration = Number.isFinite(videoRef.current.duration) && videoRef.current.duration > 0
-        ? videoRef.current.duration
-        : null;
-      if (!duration) return;
+      if (videoDuration <= 0) return;
 
-      const time = percent * duration;
+      const time = percent * videoDuration;
 
       if (draggingMarker === 'start') {
         onTrimStartChange(Math.min(time, trimEnd));
@@ -118,15 +114,11 @@ export default function Timeline({
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [draggingMarker, videoRef, trimStart, trimEnd, onTrimStartChange, onTrimEndChange]);
+  }, [draggingMarker, videoRef, trimStart, trimEnd, onTrimStartChange, onTrimEndChange, videoDuration]);
 
-  const videoDuration =
-    videoRef.current && Number.isFinite(videoRef.current.duration) && videoRef.current.duration > 0
-      ? videoRef.current.duration
-      : null;
-
-  const startPercent = videoDuration ? (trimStart / videoDuration) * 100 : 0;
-  const endPercent = videoDuration ? (trimEnd / videoDuration) * 100 : 100;
+  const markerDuration = videoDuration > 0 ? videoDuration : null;
+  const startPercent = markerDuration ? (trimStart / markerDuration) * 100 : 0;
+  const endPercent = markerDuration ? (trimEnd / markerDuration) * 100 : 100;
 
   return (
     <div className="my-5 relative">

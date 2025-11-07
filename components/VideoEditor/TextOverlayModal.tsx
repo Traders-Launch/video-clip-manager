@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { Clip, TextOverlay } from '@/types';
 
 interface TextOverlayModalProps {
@@ -18,47 +18,42 @@ export default function TextOverlayModal({
   onClose,
   onSave,
 }: TextOverlayModalProps) {
-  const [content, setContent] = useState('');
-  const [position, setPosition] = useState<'top' | 'center' | 'bottom'>('center');
-  const [fontSize, setFontSize] = useState(48);
-  const [textColor, setTextColor] = useState('#ffffff');
-  const [bgColor, setBgColor] = useState('#000000');
-  const [bgOpacity, setBgOpacity] = useState(50);
-  const [fontWeight, setFontWeight] = useState('700');
+  const buildInitialFormState = (targetClip?: Clip) => ({
+    content: targetClip?.textOverlay?.content ?? '',
+    position: targetClip?.textOverlay?.position ?? 'center',
+    fontSize: targetClip?.textOverlay?.fontSize ?? 48,
+    textColor: targetClip?.textOverlay?.textColor ?? '#ffffff',
+    bgColor: targetClip?.textOverlay?.bgColor ?? '#000000',
+    bgOpacity: targetClip?.textOverlay?.bgOpacity ?? 50,
+    fontWeight: targetClip?.textOverlay?.fontWeight ?? '700',
+  });
 
-  useEffect(() => {
-    if (isOpen && clip?.textOverlay) {
-      setContent(clip.textOverlay.content);
-      setPosition(clip.textOverlay.position);
-      setFontSize(clip.textOverlay.fontSize);
-      setTextColor(clip.textOverlay.textColor);
-      setBgColor(clip.textOverlay.bgColor);
-      setBgOpacity(clip.textOverlay.bgOpacity);
-      setFontWeight(clip.textOverlay.fontWeight);
-    } else if (isOpen && !clip?.textOverlay) {
-      // Reset to defaults
-      setContent('');
-      setPosition('center');
-      setFontSize(48);
-      setTextColor('#ffffff');
-      setBgColor('#000000');
-      setBgOpacity(50);
-      setFontWeight('700');
-    }
-  }, [isOpen, clip]);
+  const [formState, setFormState] = useState(() => buildInitialFormState(clip));
+
+  const updateFormState = <K extends keyof typeof formState>(
+    key: K,
+    value: (typeof formState)[K]
+  ) => {
+    setFormState(prev => ({
+      ...prev,
+      [key]: value,
+    }));
+  };
 
   const handleSave = () => {
     if (!clipId) return;
 
-    if (content.trim()) {
+    const trimmedContent = formState.content.trim();
+
+    if (trimmedContent) {
       const textOverlay: TextOverlay = {
-        content,
-        position,
-        fontSize,
-        textColor,
-        bgColor,
-        bgOpacity,
-        fontWeight,
+        content: trimmedContent,
+        position: formState.position,
+        fontSize: formState.fontSize,
+        textColor: formState.textColor,
+        bgColor: formState.bgColor,
+        bgOpacity: formState.bgOpacity,
+        fontWeight: formState.fontWeight,
       };
       onSave(clipId, textOverlay);
     } else {
@@ -97,8 +92,8 @@ export default function TextOverlayModal({
         <div className="mb-5">
           <label className="block mb-2 font-medium text-sm">Text Content</label>
           <textarea
-            value={content}
-            onChange={(e) => setContent(e.target.value)}
+            value={formState.content}
+            onChange={(e) => updateFormState('content', e.target.value)}
             placeholder="Enter your text..."
             className="w-full bg-[#333] border border-[#444] text-white p-2.5 rounded-md text-sm resize-vertical min-h-[80px]"
           />
@@ -108,8 +103,10 @@ export default function TextOverlayModal({
           <div>
             <label className="block mb-2 font-medium text-sm">Position</label>
             <select
-              value={position}
-              onChange={(e) => setPosition(e.target.value as any)}
+              value={formState.position}
+              onChange={(e) =>
+                updateFormState('position', e.target.value as 'top' | 'center' | 'bottom')
+              }
               className="w-full bg-[#333] border border-[#444] text-white p-2.5 rounded-md text-sm"
             >
               <option value="top">Top</option>
@@ -120,14 +117,14 @@ export default function TextOverlayModal({
 
           <div>
             <label className="block mb-2 font-medium text-sm">
-              Font Size: {fontSize}px
+              Font Size: {formState.fontSize}px
             </label>
             <input
               type="range"
               min="20"
               max="120"
-              value={fontSize}
-              onChange={(e) => setFontSize(Number(e.target.value))}
+              value={formState.fontSize}
+              onChange={(e) => updateFormState('fontSize', Number(e.target.value))}
               className="w-full"
             />
           </div>
@@ -139,13 +136,13 @@ export default function TextOverlayModal({
             <div className="flex gap-2.5 items-center">
               <input
                 type="color"
-                value={textColor}
-                onChange={(e) => setTextColor(e.target.value)}
+                value={formState.textColor}
+                onChange={(e) => updateFormState('textColor', e.target.value)}
                 className="w-[50px] h-10 border-none rounded-md cursor-pointer"
               />
               <input
                 type="text"
-                value={textColor}
+                value={formState.textColor}
                 readOnly
                 className="flex-1 bg-[#333] border border-[#444] text-white p-2.5 rounded-md text-sm"
               />
@@ -157,13 +154,13 @@ export default function TextOverlayModal({
             <div className="flex gap-2.5 items-center">
               <input
                 type="color"
-                value={bgColor}
-                onChange={(e) => setBgColor(e.target.value)}
+                value={formState.bgColor}
+                onChange={(e) => updateFormState('bgColor', e.target.value)}
                 className="w-[50px] h-10 border-none rounded-md cursor-pointer"
               />
               <input
                 type="text"
-                value={bgColor}
+                value={formState.bgColor}
                 readOnly
                 className="flex-1 bg-[#333] border border-[#444] text-white p-2.5 rounded-md text-sm"
               />
@@ -174,14 +171,14 @@ export default function TextOverlayModal({
         <div className="grid grid-cols-2 gap-4 mb-5">
           <div>
             <label className="block mb-2 font-medium text-sm">
-              Background Opacity: {bgOpacity}%
+              Background Opacity: {formState.bgOpacity}%
             </label>
             <input
               type="range"
               min="0"
               max="100"
-              value={bgOpacity}
-              onChange={(e) => setBgOpacity(Number(e.target.value))}
+              value={formState.bgOpacity}
+              onChange={(e) => updateFormState('bgOpacity', Number(e.target.value))}
               className="w-full"
             />
           </div>
@@ -189,8 +186,8 @@ export default function TextOverlayModal({
           <div>
             <label className="block mb-2 font-medium text-sm">Font Weight</label>
             <select
-              value={fontWeight}
-              onChange={(e) => setFontWeight(e.target.value)}
+              value={formState.fontWeight}
+              onChange={(e) => updateFormState('fontWeight', e.target.value)}
               className="w-full bg-[#333] border border-[#444] text-white p-2.5 rounded-md text-sm"
             >
               <option value="400">Normal</option>
