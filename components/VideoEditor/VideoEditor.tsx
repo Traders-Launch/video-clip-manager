@@ -97,9 +97,11 @@ const defaultState: PersistedState = {
 
 let cachedInitialState: PersistedState | null = null;
 const getInitialState = (): PersistedState => {
+  if (typeof window === 'undefined') {
+    return defaultState;
+  }
   if (!cachedInitialState) {
-    cachedInitialState =
-      typeof window === 'undefined' ? defaultState : loadPersistedState();
+    cachedInitialState = loadPersistedState();
   }
   return cachedInitialState;
 };
