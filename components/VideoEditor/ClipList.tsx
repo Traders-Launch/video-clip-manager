@@ -12,6 +12,7 @@ interface ClipListProps {
   onDelete: (clipId: number) => void;
   onEditText: (clipId: number) => void;
   onCombineSelected: () => void;
+  onClearAll: () => void;
 }
 
 export default function ClipList({
@@ -23,6 +24,7 @@ export default function ClipList({
   onDelete,
   onEditText,
   onCombineSelected,
+  onClearAll,
 }: ClipListProps) {
   return (
     <div className="bg-[#2a2a2a] rounded-xl p-5">
@@ -31,14 +33,25 @@ export default function ClipList({
           Clip Variations ({clips.length})
         </h2>
 
-        {selectedClips.size >= 2 && (
-          <button
-            onClick={onCombineSelected}
-            className="bg-[#30d158] text-white border-none px-5 py-2.5 rounded-lg cursor-pointer text-sm font-medium hover:bg-[#28a745] transition-all"
-          >
-            Combine Selected ({selectedClips.size})
-          </button>
-        )}
+        <div className="flex gap-2">
+          {selectedClips.size >= 2 && (
+            <button
+              onClick={onCombineSelected}
+              className="bg-[#30d158] text-white border-none px-5 py-2.5 rounded-lg cursor-pointer text-sm font-medium hover:bg-[#28a745] transition-all"
+            >
+              Combine Selected ({selectedClips.size})
+            </button>
+          )}
+
+          {clips.length > 0 && (
+            <button
+              onClick={onClearAll}
+              className="bg-[#ff453a] text-white border-none px-5 py-2.5 rounded-lg cursor-pointer text-sm font-medium hover:bg-[#cc362e] transition-all"
+            >
+              Clear All
+            </button>
+          )}
+        </div>
       </div>
 
       {clips.length === 0 ? (

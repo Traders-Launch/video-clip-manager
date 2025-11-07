@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { Clip, ViewMode } from '@/types';
 import VideoImport from './VideoImport';
 import VideoPlayer from './VideoPlayer';
@@ -8,6 +8,9 @@ import Timeline from './Timeline';
 import Controls from './Controls';
 import ClipList from './ClipList';
 import TextOverlayModal from './TextOverlayModal';
+
+const STORAGE_KEY = 'video-clip-manager-clips';
+const COUNTER_KEY = 'video-clip-manager-counter';
 
 export default function VideoEditor() {
   const [videoFile, setVideoFile] = useState<File | null>(null);
@@ -25,16 +28,51 @@ export default function VideoEditor() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
+  // Load clips from localStorage on mount
+  useEffect(() => {
+    try {
+      const savedClips = localStorage.getItem(STORAGE_KEY);
+      const savedCounter = localStorage.getItem(COUNTER_KEY);
+
+      if (savedClips) {
+        setClips(JSON.parse(savedClips));
+      }
+      if (savedCounter) {
+        setClipCounter(parseInt(savedCounter, 10));
+      }
+    } catch (error) {
+      console.error('Failed to load clips from localStorage:', error);
+    }
+  }, []);
+
+  // Save clips to localStorage whenever they change
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(clips));
+      localStorage.setItem(COUNTER_KEY, clipCounter.toString());
+    } catch (error) {
+      console.error('Failed to save clips to localStorage:', error);
+    }
+  }, [clips, clipCounter]);
+
   const handleVideoLoad = (file: File) => {
     setVideoFile(file);
-    // Reset state when loading new video
-    setClips([]);
+    // Note: We don't reset clips here anymore - they persist across videos
     setSelectedClips(new Set());
     setTrimStart(0);
     setTrimEnd(0);
-    setClipCounter(1);
     setViewMode('edit');
     setCurrentPreviewClip(null);
+  };
+
+  const clearAllClips = () => {
+    if (confirm('Are you sure you want to delete all clips? This cannot be undone.')) {
+      setClips([]);
+      setClipCounter(1);
+      setSelectedClips(new Set());
+      localStorage.removeItem(STORAGE_KEY);
+      localStorage.removeItem(COUNTER_KEY);
+    }
   };
 
   const handleVideoMetadata = () => {
@@ -210,6 +248,7 @@ export default function VideoEditor() {
           onDelete={deleteClip}
           onEditText={openTextEditor}
           onCombineSelected={combineSelectedClips}
+          onClearAll={clearAllClips}
         />
 
         <TextOverlayModal
