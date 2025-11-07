@@ -1,0 +1,1136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Video Clip Manager</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: #1a1a1a;
+            color: #fff;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        h1 {
+            margin-bottom: 20px;
+            font-size: 24px;
+            font-weight: 600;
+        }
+
+        .import-section {
+            background: #2a2a2a;
+            padding: 40px;
+            border-radius: 12px;
+            text-align: center;
+            margin-bottom: 30px;
+            border: 2px dashed #444;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .import-section:hover {
+            border-color: #666;
+            background: #333;
+        }
+
+        .import-section.hidden {
+            display: none;
+        }
+
+        #videoInput {
+            display: none;
+        }
+
+        .main-content {
+            display: none;
+        }
+
+        .main-content.active {
+            display: block;
+        }
+
+        .video-section {
+            background: #2a2a2a;
+            padding: 20px;
+            border-radius: 12px;
+            margin-bottom: 20px;
+        }
+
+        video {
+            width: 100%;
+            max-height: 500px;
+            background: #000;
+            border-radius: 8px;
+        }
+
+        .timeline {
+            margin: 20px 0;
+            position: relative;
+        }
+
+        .timeline-track {
+            width: 100%;
+            height: 8px;
+            background: #444;
+            border-radius: 4px;
+            position: relative;
+            cursor: pointer;
+        }
+
+        .timeline-progress {
+            height: 100%;
+            background: #0a84ff;
+            border-radius: 4px;
+            width: 0%;
+            position: relative;
+        }
+
+        .trim-markers {
+            position: absolute;
+            top: -10px;
+            left: 0;
+            right: 0;
+            height: 28px;
+            pointer-events: none;
+        }
+
+        .trim-marker {
+            position: absolute;
+            width: 3px;
+            height: 28px;
+            background: #ffd60a;
+            cursor: ew-resize;
+            pointer-events: all;
+        }
+
+        .trim-marker::after {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 12px;
+            height: 12px;
+            background: #ffd60a;
+            border-radius: 50%;
+            border: 2px solid #1a1a1a;
+        }
+
+        .controls {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            flex-wrap: wrap;
+            margin-top: 15px;
+        }
+
+        button {
+            background: #0a84ff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            transition: all 0.2s;
+        }
+
+        button:hover {
+            background: #0066cc;
+        }
+
+        button.secondary {
+            background: #444;
+        }
+
+        button.secondary:hover {
+            background: #555;
+        }
+
+        button.success {
+            background: #30d158;
+        }
+
+        button.success:hover {
+            background: #28a745;
+        }
+
+        .time-display {
+            background: #333;
+            padding: 8px 15px;
+            border-radius: 6px;
+            font-size: 13px;
+            font-family: 'Monaco', monospace;
+        }
+
+        .clips-section {
+            background: #2a2a2a;
+            padding: 20px;
+            border-radius: 12px;
+        }
+
+        .clips-section h2 {
+            margin-bottom: 15px;
+            font-size: 18px;
+            font-weight: 600;
+        }
+
+        .clips-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 15px;
+        }
+
+        .clip-card {
+            background: #333;
+            padding: 15px;
+            border-radius: 8px;
+            border: 2px solid transparent;
+            transition: all 0.2s;
+        }
+
+        .clip-card:hover {
+            border-color: #0a84ff;
+        }
+
+        .clip-card.selected {
+            border-color: #30d158;
+            background: #3a3f3a;
+        }
+
+        .clip-card.combined {
+            border-color: #bf5af2;
+        }
+
+        .clip-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+
+        .clip-title {
+            font-weight: 600;
+            font-size: 14px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .clip-badge {
+            background: #bf5af2;
+            color: white;
+            font-size: 10px;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-weight: 600;
+        }
+
+        .select-checkbox {
+            width: 18px;
+            height: 18px;
+            cursor: pointer;
+        }
+
+        .clip-info {
+            font-size: 13px;
+            color: #999;
+            margin-bottom: 10px;
+        }
+
+        .clip-actions {
+            display: flex;
+            gap: 8px;
+        }
+
+        .clip-actions button {
+            padding: 6px 12px;
+            font-size: 12px;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 40px;
+            color: #666;
+        }
+
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.8);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal.active {
+            display: flex;
+        }
+
+        .modal-content {
+            background: #2a2a2a;
+            padding: 30px;
+            border-radius: 12px;
+            max-width: 600px;
+            width: 90%;
+            max-height: 80vh;
+            overflow-y: auto;
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+
+        .modal-header h3 {
+            font-size: 20px;
+            font-weight: 600;
+        }
+
+        .close-btn {
+            background: #444;
+            border: none;
+            color: white;
+            font-size: 24px;
+            cursor: pointer;
+            width: 32px;
+            height: 32px;
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0;
+        }
+
+        .close-btn:hover {
+            background: #555;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 500;
+            font-size: 14px;
+        }
+
+        .form-group input[type="text"],
+        .form-group textarea,
+        .form-group select {
+            width: 100%;
+            background: #333;
+            border: 1px solid #444;
+            color: white;
+            padding: 10px;
+            border-radius: 6px;
+            font-size: 14px;
+            font-family: inherit;
+        }
+
+        .form-group textarea {
+            resize: vertical;
+            min-height: 80px;
+        }
+
+        .form-group input[type="range"] {
+            width: 100%;
+        }
+
+        .form-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+        }
+
+        .color-input-group {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+
+        .color-input-group input[type="color"] {
+            width: 50px;
+            height: 40px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+        }
+
+        #videoCanvas {
+            width: 100%;
+            max-height: 500px;
+            background: #000;
+            border-radius: 8px;
+            display: none;
+        }
+
+        #videoCanvas.active {
+            display: block;
+        }
+
+        video.with-canvas {
+            display: none;
+        }
+
+        .text-badge {
+            background: #ff9f0a;
+            color: white;
+            font-size: 10px;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-weight: 600;
+        }
+
+        .preview-mode .edit-only {
+            display: none !important;
+        }
+
+        .preview-mode .preview-only {
+            display: block !important;
+        }
+
+        .preview-mode .trim-markers {
+            display: none;
+        }
+
+        .preview-mode #backToEditBtn {
+            display: block !important;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Video Clip Manager</h1>
+
+        <div class="import-section" id="importSection">
+            <h2 style="margin-bottom: 10px;">Import Video</h2>
+            <p style="color: #999;">Click to select a video file or drag and drop</p>
+            <input type="file" id="videoInput" accept="video/*">
+        </div>
+
+        <div class="main-content" id="mainContent">
+            <div class="video-section">
+                <video id="videoPlayer" controls></video>
+                <canvas id="videoCanvas"></canvas>
+
+                <div class="timeline">
+                    <div class="timeline-track" id="timelineTrack">
+                        <div class="timeline-progress" id="timelineProgress"></div>
+                        <div class="trim-markers" id="trimMarkers">
+                            <div class="trim-marker" id="startMarker" style="left: 0%"></div>
+                            <div class="trim-marker" id="endMarker" style="left: 100%"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="controls">
+                    <button id="backToEditBtn" class="secondary" style="display: none;">← Back to Edit Mode</button>
+                    <button id="playPauseBtn">Play</button>
+                    <button id="setInBtn" class="secondary edit-only">Set In Point</button>
+                    <button id="setOutBtn" class="secondary edit-only">Set Out Point</button>
+                    <button id="createClipBtn" class="success edit-only">Create Clip</button>
+                    <div class="time-display">
+                        <span id="currentTime">00:00</span> / <span id="duration">00:00</span>
+                    </div>
+                    <div class="time-display edit-only">
+                        Trim: <span id="trimRange">00:00 - 00:00</span>
+                    </div>
+                    <div class="time-display preview-only" style="display: none;">
+                        <span id="previewClipName"></span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="clips-section">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                    <h2 style="margin: 0;">Clip Variations (<span id="clipCount">0</span>)</h2>
+                    <button id="combineBtn" class="success" style="display: none;">Combine Selected (<span id="selectedCount">0</span>)</button>
+                </div>
+                <div class="clips-grid" id="clipsGrid">
+                    <div class="empty-state">
+                        No clips yet. Set in/out points and create your first clip!
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Text Overlay Modal -->
+    <div class="modal" id="textModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Add Text Overlay</h3>
+                <button class="close-btn" onclick="closeTextModal()">&times;</button>
+            </div>
+
+            <div class="form-group">
+                <label>Text Content</label>
+                <textarea id="textContent" placeholder="Enter your text..."></textarea>
+            </div>
+
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Position</label>
+                    <select id="textPosition">
+                        <option value="top">Top</option>
+                        <option value="center" selected>Center</option>
+                        <option value="bottom">Bottom</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label>Font Size: <span id="fontSizeValue">48</span>px</label>
+                    <input type="range" id="fontSize" min="20" max="120" value="48"
+                           oninput="document.getElementById('fontSizeValue').textContent = this.value">
+                </div>
+            </div>
+
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Text Color</label>
+                    <div class="color-input-group">
+                        <input type="color" id="textColor" value="#ffffff">
+                        <input type="text" id="textColorHex" value="#ffffff" readonly>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label>Background Color</label>
+                    <div class="color-input-group">
+                        <input type="color" id="bgColor" value="#000000">
+                        <input type="text" id="bgColorHex" value="#000000" readonly>
+                    </div>
+                </div>
+            </div>
+
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Background Opacity: <span id="bgOpacityValue">50</span>%</label>
+                    <input type="range" id="bgOpacity" min="0" max="100" value="50"
+                           oninput="document.getElementById('bgOpacityValue').textContent = this.value">
+                </div>
+
+                <div class="form-group">
+                    <label>Font Weight</label>
+                    <select id="fontWeight">
+                        <option value="400">Normal</option>
+                        <option value="600">Semi-Bold</option>
+                        <option value="700" selected>Bold</option>
+                        <option value="900">Black</option>
+                    </select>
+                </div>
+            </div>
+
+            <div style="display: flex; gap: 10px; margin-top: 20px;">
+                <button onclick="saveTextOverlay()" class="success" style="flex: 1;">Save Text</button>
+                <button onclick="removeTextOverlay()" style="background: #ff453a; flex: 1;">Remove Text</button>
+                <button onclick="closeTextModal()" class="secondary">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let video = null;
+        let videoFile = null;
+        let clips = [];
+        let selectedClips = new Set();
+        let trimStart = 0;
+        let trimEnd = 0;
+        let clipCounter = 1;
+        let currentEditingClipId = null;
+        let canvasRenderInterval = null;
+        let previewMode = false;
+        let currentPreviewClip = null;
+        let currentSegmentIndex = 0;
+        let clipPlaybackInterval = null;
+
+        // DOM elements
+        const importSection = document.getElementById('importSection');
+        const mainContent = document.getElementById('mainContent');
+        const videoInput = document.getElementById('videoInput');
+        const videoPlayer = document.getElementById('videoPlayer');
+        const videoCanvas = document.getElementById('videoCanvas');
+        const timelineTrack = document.getElementById('timelineTrack');
+        const timelineProgress = document.getElementById('timelineProgress');
+        const startMarker = document.getElementById('startMarker');
+        const endMarker = document.getElementById('endMarker');
+        const playPauseBtn = document.getElementById('playPauseBtn');
+        const setInBtn = document.getElementById('setInBtn');
+        const setOutBtn = document.getElementById('setOutBtn');
+        const createClipBtn = document.getElementById('createClipBtn');
+        const backToEditBtn = document.getElementById('backToEditBtn');
+        const currentTimeDisplay = document.getElementById('currentTime');
+        const durationDisplay = document.getElementById('duration');
+        const trimRangeDisplay = document.getElementById('trimRange');
+        const previewClipName = document.getElementById('previewClipName');
+        const clipsGrid = document.getElementById('clipsGrid');
+        const clipCount = document.getElementById('clipCount');
+        const combineBtn = document.getElementById('combineBtn');
+        const selectedCount = document.getElementById('selectedCount');
+        const textModal = document.getElementById('textModal');
+        const videoSection = document.querySelector('.video-section');
+
+        const ctx = videoCanvas.getContext('2d');
+
+        // Import functionality
+        importSection.addEventListener('click', () => videoInput.click());
+
+        videoInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                loadVideo(file);
+            }
+        });
+
+        function loadVideo(file) {
+            videoFile = file;
+            const url = URL.createObjectURL(file);
+            videoPlayer.src = url;
+            importSection.classList.add('hidden');
+            mainContent.classList.add('active');
+
+            videoPlayer.addEventListener('loadedmetadata', () => {
+                trimStart = 0;
+                trimEnd = videoPlayer.duration;
+                updateTrimMarkers();
+                updateTrimDisplay();
+            });
+        }
+
+        // Playback controls
+        playPauseBtn.addEventListener('click', () => {
+            if (videoPlayer.paused) {
+                videoPlayer.play();
+                playPauseBtn.textContent = 'Pause';
+            } else {
+                videoPlayer.pause();
+                playPauseBtn.textContent = 'Play';
+            }
+        });
+
+        videoPlayer.addEventListener('timeupdate', () => {
+            if (previewMode && currentPreviewClip) {
+                // In preview mode, show time relative to clip
+                const segment = currentPreviewClip.segments[currentSegmentIndex];
+                const relativeTime = videoPlayer.currentTime - segment.start;
+                const clipProgress = (relativeTime / (segment.end - segment.start)) * 100;
+
+                timelineProgress.style.width = Math.max(0, Math.min(100, clipProgress)) + '%';
+                currentTimeDisplay.textContent = formatTime(Math.max(0, relativeTime));
+
+                // Check if we need to move to next segment or stop
+                if (videoPlayer.currentTime >= segment.end) {
+                    currentSegmentIndex++;
+                    if (currentSegmentIndex >= currentPreviewClip.segments.length) {
+                        // Clip finished, loop back to start
+                        currentSegmentIndex = 0;
+                        videoPlayer.currentTime = currentPreviewClip.segments[0].start;
+                    } else {
+                        // Move to next segment
+                        videoPlayer.currentTime = currentPreviewClip.segments[currentSegmentIndex].start;
+                    }
+                }
+            } else {
+                // Normal edit mode
+                const percent = (videoPlayer.currentTime / videoPlayer.duration) * 100;
+                timelineProgress.style.width = percent + '%';
+                currentTimeDisplay.textContent = formatTime(videoPlayer.currentTime);
+            }
+        });
+
+        videoPlayer.addEventListener('loadedmetadata', () => {
+            durationDisplay.textContent = formatTime(videoPlayer.duration);
+        });
+
+        // Timeline scrubbing
+        timelineTrack.addEventListener('click', (e) => {
+            const rect = timelineTrack.getBoundingClientRect();
+            const percent = (e.clientX - rect.left) / rect.width;
+
+            if (previewMode && currentPreviewClip) {
+                // In preview mode, scrub within the current clip segment
+                const segment = currentPreviewClip.segments[currentSegmentIndex];
+                const segmentDuration = segment.end - segment.start;
+                videoPlayer.currentTime = segment.start + (percent * segmentDuration);
+            } else {
+                // Normal edit mode
+                videoPlayer.currentTime = percent * videoPlayer.duration;
+            }
+        });
+
+        // Trim controls
+        setInBtn.addEventListener('click', () => {
+            trimStart = videoPlayer.currentTime;
+            updateTrimMarkers();
+            updateTrimDisplay();
+        });
+
+        setOutBtn.addEventListener('click', () => {
+            trimEnd = videoPlayer.currentTime;
+            updateTrimMarkers();
+            updateTrimDisplay();
+        });
+
+        function updateTrimMarkers() {
+            const startPercent = (trimStart / videoPlayer.duration) * 100;
+            const endPercent = (trimEnd / videoPlayer.duration) * 100;
+            startMarker.style.left = startPercent + '%';
+            endMarker.style.left = endPercent + '%';
+        }
+
+        function updateTrimDisplay() {
+            trimRangeDisplay.textContent = `${formatTime(trimStart)} - ${formatTime(trimEnd)}`;
+        }
+
+        // Clip creation
+        createClipBtn.addEventListener('click', () => {
+            const clip = {
+                id: Date.now(),
+                name: `Clip ${clipCounter++}`,
+                segments: [{start: trimStart, end: trimEnd}],
+                duration: trimEnd - trimStart,
+                isCombined: false,
+                textOverlay: null
+            };
+            clips.push(clip);
+            renderClips();
+        });
+
+        function renderClips() {
+            clipCount.textContent = clips.length;
+
+            if (clips.length === 0) {
+                clipsGrid.innerHTML = '<div class="empty-state">No clips yet. Set in/out points and create your first clip!</div>';
+                return;
+            }
+
+            clipsGrid.innerHTML = clips.map(clip => {
+                const isSelected = selectedClips.has(clip.id);
+                const segmentInfo = clip.isCombined
+                    ? `${clip.segments.length} segments combined`
+                    : `${formatTime(clip.segments[0].start)} - ${formatTime(clip.segments[0].end)}`;
+
+                return `
+                    <div class="clip-card ${isSelected ? 'selected' : ''} ${clip.isCombined ? 'combined' : ''}" data-clip-id="${clip.id}">
+                        <div class="clip-header">
+                            <div class="clip-title">
+                                <input type="checkbox" class="select-checkbox"
+                                    ${isSelected ? 'checked' : ''}
+                                    onchange="toggleClipSelection(${clip.id})" />
+                                ${clip.name}
+                                ${clip.isCombined ? '<span class="clip-badge">COMBINED</span>' : ''}
+                                ${clip.textOverlay ? '<span class="text-badge">TEXT</span>' : ''}
+                            </div>
+                        </div>
+                        <div class="clip-info">
+                            ${segmentInfo}<br>
+                            Total Duration: ${formatTime(clip.duration)}
+                            ${clip.textOverlay ? `<br>Text: "${clip.textOverlay.content}"` : ''}
+                        </div>
+                        <div class="clip-actions">
+                            <button onclick="editTextOverlay(${clip.id})" style="background: #ff9f0a;">Edit Text</button>
+                            <button onclick="previewClip(${clip.id})" class="secondary">Preview</button>
+                            <button onclick="duplicateClip(${clip.id})" class="secondary">Duplicate</button>
+                            <button onclick="deleteClip(${clip.id})" style="background: #ff453a;">Delete</button>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        window.previewClip = (clipId) => {
+            const clip = clips.find(c => c.id === clipId);
+            if (!clip) return;
+
+            // Enter preview mode
+            previewMode = true;
+            currentPreviewClip = clip;
+            currentSegmentIndex = 0;
+            videoSection.classList.add('preview-mode');
+
+            // Update UI
+            previewClipName.textContent = clip.name;
+            durationDisplay.textContent = formatTime(clip.duration);
+
+            // Enable canvas if clip has text overlay
+            if (clip.textOverlay) {
+                enableCanvasOverlay(clip);
+            } else {
+                disableCanvasOverlay();
+            }
+
+            // Start playing from first segment
+            videoPlayer.currentTime = clip.segments[0].start;
+            videoPlayer.play();
+            playPauseBtn.textContent = 'Pause';
+        };
+
+        backToEditBtn.addEventListener('click', () => {
+            exitPreviewMode();
+        });
+
+        function exitPreviewMode() {
+            previewMode = false;
+            currentPreviewClip = null;
+            currentSegmentIndex = 0;
+            videoSection.classList.remove('preview-mode');
+
+            // Reset to edit mode
+            videoPlayer.pause();
+            playPauseBtn.textContent = 'Play';
+            durationDisplay.textContent = formatTime(videoPlayer.duration);
+            disableCanvasOverlay();
+
+            // Reset to beginning
+            videoPlayer.currentTime = 0;
+        }
+
+        window.duplicateClip = (clipId) => {
+            const clip = clips.find(c => c.id === clipId);
+            if (clip) {
+                const newClip = {
+                    id: Date.now(),
+                    name: `${clip.name} (Copy)`,
+                    segments: JSON.parse(JSON.stringify(clip.segments)),
+                    duration: clip.duration,
+                    isCombined: clip.isCombined,
+                    textOverlay: clip.textOverlay ? JSON.parse(JSON.stringify(clip.textOverlay)) : null
+                };
+                clips.push(newClip);
+                renderClips();
+            }
+        };
+
+        window.toggleClipSelection = (clipId) => {
+            if (selectedClips.has(clipId)) {
+                selectedClips.delete(clipId);
+            } else {
+                selectedClips.add(clipId);
+            }
+
+            updateSelectionUI();
+            renderClips();
+        };
+
+        function updateSelectionUI() {
+            const count = selectedClips.size;
+            selectedCount.textContent = count;
+
+            if (count >= 2) {
+                combineBtn.style.display = 'block';
+            } else {
+                combineBtn.style.display = 'none';
+            }
+        }
+
+        combineBtn.addEventListener('click', () => {
+            if (selectedClips.size < 2) return;
+
+            const selectedClipObjs = Array.from(selectedClips)
+                .map(id => clips.find(c => c.id === id))
+                .filter(c => c);
+
+            // Sort by the start time of the first segment
+            selectedClipObjs.sort((a, b) => a.segments[0].start - b.segments[0].start);
+
+            // Combine all segments
+            const allSegments = selectedClipObjs.flatMap(c => c.segments);
+            const totalDuration = allSegments.reduce((sum, seg) => sum + (seg.end - seg.start), 0);
+
+            const combinedClip = {
+                id: Date.now(),
+                name: `Combined ${clipCounter++}`,
+                segments: allSegments,
+                duration: totalDuration,
+                isCombined: true,
+                textOverlay: null
+            };
+
+            clips.push(combinedClip);
+
+            // Clear selection
+            selectedClips.clear();
+            updateSelectionUI();
+            renderClips();
+        });
+
+        window.exportClip = async (clipId) => {
+            const clip = clips.find(c => c.id === clipId);
+            if (!clip) return;
+
+            alert('Export functionality: In a full implementation, this would use FFmpeg.js or a server-side API to trim and export the video. For this prototype, you can use the preview function to see the clip boundaries.');
+        };
+
+        window.deleteClip = (clipId) => {
+            if (confirm('Delete this clip?')) {
+                clips = clips.filter(c => c.id !== clipId);
+                selectedClips.delete(clipId);
+                updateSelectionUI();
+                renderClips();
+            }
+        };
+
+        function formatTime(seconds) {
+            const mins = Math.floor(seconds / 60);
+            const secs = Math.floor(seconds % 60);
+            return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+        }
+
+        // Drag marker functionality
+        let draggingMarker = null;
+
+        startMarker.addEventListener('mousedown', (e) => {
+            if (previewMode) return;
+            e.stopPropagation();
+            draggingMarker = 'start';
+        });
+
+        endMarker.addEventListener('mousedown', (e) => {
+            if (previewMode) return;
+            e.stopPropagation();
+            draggingMarker = 'end';
+        });
+
+        document.addEventListener('mousemove', (e) => {
+            if (!draggingMarker) return;
+
+            const rect = timelineTrack.getBoundingClientRect();
+            let percent = (e.clientX - rect.left) / rect.width;
+            percent = Math.max(0, Math.min(1, percent));
+
+            const time = percent * videoPlayer.duration;
+
+            if (draggingMarker === 'start') {
+                trimStart = Math.min(time, trimEnd);
+            } else {
+                trimEnd = Math.max(time, trimStart);
+            }
+
+            updateTrimMarkers();
+            updateTrimDisplay();
+        });
+
+        document.addEventListener('mouseup', () => {
+            draggingMarker = null;
+        });
+
+        // Text Overlay Functions
+        window.editTextOverlay = (clipId) => {
+            const clip = clips.find(c => c.id === clipId);
+            if (!clip) return;
+
+            currentEditingClipId = clipId;
+
+            // Populate form with existing text overlay if it exists
+            if (clip.textOverlay) {
+                document.getElementById('textContent').value = clip.textOverlay.content;
+                document.getElementById('textPosition').value = clip.textOverlay.position;
+                document.getElementById('fontSize').value = clip.textOverlay.fontSize;
+                document.getElementById('fontSizeValue').textContent = clip.textOverlay.fontSize;
+                document.getElementById('textColor').value = clip.textOverlay.textColor;
+                document.getElementById('textColorHex').value = clip.textOverlay.textColor;
+                document.getElementById('bgColor').value = clip.textOverlay.bgColor;
+                document.getElementById('bgColorHex').value = clip.textOverlay.bgColor;
+                document.getElementById('bgOpacity').value = clip.textOverlay.bgOpacity;
+                document.getElementById('bgOpacityValue').textContent = clip.textOverlay.bgOpacity;
+                document.getElementById('fontWeight').value = clip.textOverlay.fontWeight;
+            } else {
+                // Reset to defaults
+                document.getElementById('textContent').value = '';
+                document.getElementById('textPosition').value = 'center';
+                document.getElementById('fontSize').value = 48;
+                document.getElementById('fontSizeValue').textContent = 48;
+                document.getElementById('textColor').value = '#ffffff';
+                document.getElementById('textColorHex').value = '#ffffff';
+                document.getElementById('bgColor').value = '#000000';
+                document.getElementById('bgColorHex').value = '#000000';
+                document.getElementById('bgOpacity').value = 50;
+                document.getElementById('bgOpacityValue').textContent = 50;
+                document.getElementById('fontWeight').value = '700';
+            }
+
+            textModal.classList.add('active');
+        };
+
+        window.closeTextModal = () => {
+            textModal.classList.remove('active');
+            currentEditingClipId = null;
+        };
+
+        window.saveTextOverlay = () => {
+            if (!currentEditingClipId) return;
+
+            const clip = clips.find(c => c.id === currentEditingClipId);
+            if (!clip) return;
+
+            const content = document.getElementById('textContent').value.trim();
+
+            if (content) {
+                clip.textOverlay = {
+                    content: content,
+                    position: document.getElementById('textPosition').value,
+                    fontSize: parseInt(document.getElementById('fontSize').value),
+                    textColor: document.getElementById('textColor').value,
+                    bgColor: document.getElementById('bgColor').value,
+                    bgOpacity: parseInt(document.getElementById('bgOpacity').value),
+                    fontWeight: document.getElementById('fontWeight').value
+                };
+            } else {
+                clip.textOverlay = null;
+            }
+
+            closeTextModal();
+            renderClips();
+        };
+
+        window.removeTextOverlay = () => {
+            if (!currentEditingClipId) return;
+
+            const clip = clips.find(c => c.id === currentEditingClipId);
+            if (!clip) return;
+
+            clip.textOverlay = null;
+            closeTextModal();
+            renderClips();
+        };
+
+        // Color input sync
+        document.getElementById('textColor').addEventListener('input', (e) => {
+            document.getElementById('textColorHex').value = e.target.value;
+        });
+
+        document.getElementById('bgColor').addEventListener('input', (e) => {
+            document.getElementById('bgColorHex').value = e.target.value;
+        });
+
+        // Canvas overlay rendering
+        function enableCanvasOverlay(clip) {
+            if (!clip.textOverlay) return;
+
+            // Set canvas size to match video
+            videoCanvas.width = videoPlayer.videoWidth;
+            videoCanvas.height = videoPlayer.videoHeight;
+
+            videoPlayer.classList.add('with-canvas');
+            videoCanvas.classList.add('active');
+
+            // Start rendering loop
+            startCanvasRendering(clip);
+        }
+
+        function disableCanvasOverlay() {
+            videoPlayer.classList.remove('with-canvas');
+            videoCanvas.classList.remove('active');
+            stopCanvasRendering();
+        }
+
+        function startCanvasRendering(clip) {
+            stopCanvasRendering();
+
+            const render = () => {
+                if (!videoCanvas.classList.contains('active')) return;
+
+                // Draw video frame
+                ctx.drawImage(videoPlayer, 0, 0, videoCanvas.width, videoCanvas.height);
+
+                // Draw text overlay
+                if (clip.textOverlay) {
+                    drawTextOverlay(clip.textOverlay);
+                }
+
+                canvasRenderInterval = requestAnimationFrame(render);
+            };
+
+            render();
+        }
+
+        function stopCanvasRendering() {
+            if (canvasRenderInterval) {
+                cancelAnimationFrame(canvasRenderInterval);
+                canvasRenderInterval = null;
+            }
+        }
+
+        function drawTextOverlay(textOverlay) {
+            const { content, position, fontSize, textColor, bgColor, bgOpacity, fontWeight } = textOverlay;
+
+            ctx.font = `${fontWeight} ${fontSize}px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+
+            const lines = content.split('\n');
+            const lineHeight = fontSize * 1.2;
+            const totalHeight = lines.length * lineHeight;
+
+            let startY;
+            if (position === 'top') {
+                startY = totalHeight / 2 + 40;
+            } else if (position === 'bottom') {
+                startY = videoCanvas.height - totalHeight / 2 - 40;
+            } else {
+                startY = videoCanvas.height / 2;
+            }
+
+            lines.forEach((line, index) => {
+                const y = startY + (index - (lines.length - 1) / 2) * lineHeight;
+                const textMetrics = ctx.measureText(line);
+                const textWidth = textMetrics.width;
+                const padding = 20;
+
+                // Draw background
+                const bgAlpha = bgOpacity / 100;
+                const rgb = hexToRgb(bgColor);
+                ctx.fillStyle = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${bgAlpha})`;
+                ctx.fillRect(
+                    videoCanvas.width / 2 - textWidth / 2 - padding,
+                    y - fontSize / 2 - padding / 2,
+                    textWidth + padding * 2,
+                    lineHeight
+                );
+
+                // Draw text
+                ctx.fillStyle = textColor;
+                ctx.fillText(line, videoCanvas.width / 2, y);
+            });
+        }
+
+        function hexToRgb(hex) {
+            const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+            return result ? {
+                r: parseInt(result[1], 16),
+                g: parseInt(result[2], 16),
+                b: parseInt(result[3], 16)
+            } : { r: 0, g: 0, b: 0 };
+        }
+
+        // Close modal on outside click
+        textModal.addEventListener('click', (e) => {
+            if (e.target === textModal) {
+                closeTextModal();
+            }
+        });
+    </script>
+</body>
+</html>
