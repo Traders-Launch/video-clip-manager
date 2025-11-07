@@ -10,6 +10,7 @@ interface ControlsProps {
   trimEnd: number;
   viewMode: ViewMode;
   currentPreviewClip: Clip | null;
+  currentSegmentIndex: number;
   onSetTrimStart: () => void;
   onSetTrimEnd: () => void;
   onCreateClip: () => void;
@@ -22,6 +23,7 @@ export default function Controls({
   trimEnd,
   viewMode,
   currentPreviewClip,
+  currentSegmentIndex,
   onSetTrimStart,
   onSetTrimEnd,
   onCreateClip,
@@ -29,7 +31,29 @@ export default function Controls({
 }: ControlsProps) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
-  const [duration, setDuration] = useState(0);
+  const [videoDuration, setVideoDuration] = useState(0);
+
+  const getPreviewElapsedTime = (
+    clip: Clip,
+    segmentIndex: number,
+    videoCurrentTime: number
+  ) => {
+    if (!clip.segments.length) return 0;
+
+    const safeIndex = Math.min(Math.max(segmentIndex, 0), clip.segments.length - 1);
+    const elapsedBefore = clip.segments
+      .slice(0, safeIndex)
+      .reduce((sum, segment) => sum + (segment.end - segment.start), 0);
+
+    const activeSegment = clip.segments[safeIndex];
+    const segmentDuration = Math.max(activeSegment.end - activeSegment.start, 0);
+    const withinSegment = Math.min(
+      Math.max(videoCurrentTime - activeSegment.start, 0),
+      segmentDuration
+    );
+
+    return elapsedBefore + withinSegment;
+  };
 
   useEffect(() => {
     const video = videoRef.current;
@@ -40,19 +64,21 @@ export default function Controls({
 
     const handleTimeUpdate = () => {
       if (viewMode === 'preview' && currentPreviewClip) {
-        const segment = currentPreviewClip.segments[0]; // Using first segment for relative time
-        setCurrentTime(Math.max(0, video.currentTime - segment.start));
+        const previewElapsed = getPreviewElapsedTime(
+          currentPreviewClip,
+          currentSegmentIndex,
+          video.currentTime
+        );
+        setCurrentTime(previewElapsed);
       } else {
-        setCurrentTime(video.currentTime);
+        const safeCurrentTime = Number.isFinite(video.currentTime) ? video.currentTime : 0;
+        setCurrentTime(Math.max(0, safeCurrentTime));
       }
     };
 
     const handleLoadedMetadata = () => {
-      if (viewMode === 'preview' && currentPreviewClip) {
-        setDuration(currentPreviewClip.duration);
-      } else {
-        setDuration(video.duration);
-      }
+      const safeDuration = Number.isFinite(video.duration) ? video.duration : 0;
+      setVideoDuration(Math.max(0, safeDuration));
     };
 
     video.addEventListener('play', handlePlay);
@@ -66,7 +92,30 @@ export default function Controls({
       video.removeEventListener('timeupdate', handleTimeUpdate);
       video.removeEventListener('loadedmetadata', handleLoadedMetadata);
     };
-  }, [videoRef, viewMode, currentPreviewClip]);
+  }, [videoRef, viewMode, currentPreviewClip, currentSegmentIndex]);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) {
+      setCurrentTime(0);
+      return;
+    }
+
+    if (viewMode === 'preview' && currentPreviewClip) {
+      const previewElapsed = getPreviewElapsedTime(
+        currentPreviewClip,
+        currentSegmentIndex,
+        video.currentTime
+      );
+      setCurrentTime(previewElapsed);
+    } else {
+      const safeCurrentTime = Number.isFinite(video.currentTime) ? video.currentTime : 0;
+      setCurrentTime(Math.max(0, safeCurrentTime));
+    }
+  }, [viewMode, currentPreviewClip, currentSegmentIndex, videoRef]);
+
+  const durationValue =
+    viewMode === 'preview' && currentPreviewClip ? currentPreviewClip.duration : videoDuration;
 
   const togglePlayPause = () => {
     const video = videoRef.current;
@@ -123,7 +172,7 @@ export default function Controls({
       )}
 
       <div className="bg-[#333] px-4 py-2 rounded-md text-[13px] font-mono">
-        <span>{formatTime(currentTime)}</span> / <span>{formatTime(duration)}</span>
+        <span>{formatTime(currentTime)}</span> / <span>{formatTime(durationValue)}</span>
       </div>
 
       {viewMode === 'edit' && (

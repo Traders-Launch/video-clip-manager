@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { Clip, ViewMode } from '@/types';
+import { Clip, ViewMode, TextOverlay } from '@/types';
 import VideoImport from './VideoImport';
 import VideoPlayer from './VideoPlayer';
 import Timeline from './Timeline';
@@ -186,7 +186,7 @@ export default function VideoEditor() {
     setTextModalOpen(true);
   };
 
-  const saveTextOverlay = (clipId: number, textOverlay: any) => {
+  const saveTextOverlay = (clipId: number, textOverlay: TextOverlay | null) => {
     setClips(clips.map(clip =>
       clip.id === clipId
         ? { ...clip, textOverlay }
@@ -229,14 +229,15 @@ export default function VideoEditor() {
           <Controls
             videoRef={videoRef}
             trimStart={trimStart}
-            trimEnd={trimEnd}
-            viewMode={viewMode}
-            currentPreviewClip={currentPreviewClip}
-            onSetTrimStart={() => setTrimStart(videoRef.current?.currentTime || 0)}
-            onSetTrimEnd={() => setTrimEnd(videoRef.current?.currentTime || 0)}
-            onCreateClip={createClip}
-            onExitPreview={exitPreviewMode}
-          />
+          trimEnd={trimEnd}
+          viewMode={viewMode}
+          currentPreviewClip={currentPreviewClip}
+          onSetTrimStart={() => setTrimStart(videoRef.current?.currentTime || 0)}
+          onSetTrimEnd={() => setTrimEnd(videoRef.current?.currentTime || 0)}
+          onCreateClip={createClip}
+          onExitPreview={exitPreviewMode}
+          currentSegmentIndex={currentSegmentIndex}
+        />
         </div>
 
         <ClipList
