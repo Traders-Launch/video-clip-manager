@@ -18,6 +18,7 @@ interface ClipListProps {
   onDuplicate: (clipId: number) => void;
   onDelete: (clipId: number) => void;
   onEditText: (clipId: number) => void;
+  onOpenVariations: (clipId: number) => void;
   onCombineSelected: () => void;
   onClearAll: () => void;
 }
@@ -37,6 +38,7 @@ export default function ClipList({
   onDuplicate,
   onDelete,
   onEditText,
+  onOpenVariations,
   onCombineSelected,
   onClearAll,
 }: ClipListProps) {
@@ -48,7 +50,7 @@ export default function ClipList({
       : 'Select a video or switch to All Clips.';
 
   return (
-    <div className="bg-[#2a2a2a] rounded-xl p-5">
+    <div className="bg-[#2a2a2a] rounded-xl p-5" data-tour-id="clips">
       <div className="flex flex-wrap justify-between gap-3 items-start mb-4">
         <div>
           <h2 className="text-lg font-semibold m-0">
@@ -131,6 +133,7 @@ export default function ClipList({
               onDuplicate={() => onDuplicate(clip.id)}
               onDelete={() => onDelete(clip.id)}
               onEditText={() => onEditText(clip.id)}
+              onOpenVariations={() => onOpenVariations(clip.id)}
             />
           ))}
         </div>
@@ -148,6 +151,7 @@ interface ClipCardProps {
   onDuplicate: () => void;
   onDelete: () => void;
   onEditText: () => void;
+  onOpenVariations: () => void;
 }
 
 function ClipCard({
@@ -159,6 +163,7 @@ function ClipCard({
   onDuplicate,
   onDelete,
   onEditText,
+  onOpenVariations,
 }: ClipCardProps) {
   const firstSegment = clip.segments[0];
   const segmentInfo = clip.isCombined
@@ -213,6 +218,13 @@ function ClipCard({
       </div>
 
       <div className="flex gap-2 flex-wrap">
+        <button
+          onClick={onOpenVariations}
+          className="bg-[#0a84ff] text-white border-none px-3 py-1.5 rounded-lg cursor-pointer text-xs hover:bg-[#0066cc] transition-all"
+        >
+          Variations
+        </button>
+
         <button
           onClick={onEditText}
           className="bg-[#ff9f0a] text-white border-none px-3 py-1.5 rounded-lg cursor-pointer text-xs hover:bg-[#e68a00] transition-all"

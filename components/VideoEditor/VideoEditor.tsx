@@ -1,7 +1,19 @@
 'use client';
 
-import { useState, useRef, useEffect, useMemo } from 'react';
-import { Clip, ViewMode, TextOverlay, VideoSource, SourceId } from '@/types';
+import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
+import {
+  AISuggestedClip,
+  Clip,
+  IngestJob,
+  IngestSourceDraft,
+  RenderJob,
+  SourceId,
+  TextOverlay,
+  VariationSet,
+  VideoSource,
+  ViewMode,
+} from '@/types';
+import { createRenderJob, generateVariations, listRenderJobs, runShotMiner } from '@/lib/client/api';
 import VideoImport from './VideoImport';
 import VideoPlayer from './VideoPlayer';
 import Timeline from './Timeline';
@@ -10,10 +22,15 @@ import ClipList from './ClipList';
 import TextOverlayModal from './TextOverlayModal';
 import VideoLibrary from './VideoLibrary';
 import TutorialModal from './TutorialModal';
+import IngestConnectModal from '../Automations/IngestConnectModal';
+import SuggestedClipsPanel from '../Automations/SuggestedClipsPanel';
+import VariationPanel from '../Automations/VariationPanel';
+import RenderQueueDrawer from '../Automations/RenderQueueDrawer';
 
 const LEGACY_STORAGE_KEY = 'video-clip-manager-clips';
 const LEGACY_COUNTER_KEY = 'video-clip-manager-counter';
 const STATE_KEY_V2 = 'video-clip-manager-state-v2';
+const STATE_KEY_V3 = 'video-clip-manager-state-v3';
 
 interface PersistedStateV2 {
   version: 2;
@@ -21,6 +38,41 @@ interface PersistedStateV2 {
   sources: Record<SourceId, VideoSource>;
   clips: Clip[];
 }
+
+type PersistedIngestJob = Pick<
+  IngestJob,
+  'id' | 'status' | 'progress' | 'connector' | 'sourceIds'
+>;
+
+type PersistedRenderJob = Pick<
+  RenderJob,
+  'id' | 'status' | 'progress' | 'variationIds' | 'submittedAt' | 'updatedAt'
+>;
+
+interface PersistedStateV3 {
+  version: 3;
+  activeSourceId: SourceId | null;
+  sources: Record<SourceId, VideoSource>;
+  clips: Clip[];
+  ingestJobs: Record<string, PersistedIngestJob>;
+  suggestionIndex: Record<
+    SourceId,
+    {
+      count: number;
+      lastUpdated: number;
+    }
+  >;
+  variationIndex: Record<
+    number,
+    {
+      count: number;
+      lastUpdated: number;
+    }
+  >;
+  renderJobs: Record<string, PersistedRenderJob>;
+}
+
+type PersistedState = PersistedStateV3;
 
 interface LegacyStoredSegment {
   start: number;
@@ -32,15 +84,19 @@ type LegacyStoredClip = Omit<Clip, 'sourceId' | 'segments'> & {
   segments?: LegacyStoredSegment[];
 };
 
-const defaultState: PersistedStateV2 = {
-  version: 2,
+const defaultState: PersistedState = {
+  version: 3,
   activeSourceId: null,
   sources: {},
   clips: [],
+  ingestJobs: {},
+  suggestionIndex: {},
+  variationIndex: {},
+  renderJobs: {},
 };
 
-let cachedInitialState: PersistedStateV2 | null = null;
-const getInitialState = (): PersistedStateV2 => {
+let cachedInitialState: PersistedState | null = null;
+const getInitialState = (): PersistedState => {
   if (!cachedInitialState) {
     cachedInitialState =
       typeof window === 'undefined' ? defaultState : loadPersistedState();
@@ -117,8 +173,8 @@ const migrateLegacyState = (): PersistedStateV2 | null => {
   }
 };
 
-const loadPersistedState = (): PersistedStateV2 => {
-  if (typeof window === 'undefined') return defaultState;
+const loadPersistedStateV2 = (): PersistedStateV2 | null => {
+  if (typeof window === 'undefined') return null;
 
   try {
     const stored = localStorage.getItem(STATE_KEY_V2);
@@ -139,6 +195,48 @@ const loadPersistedState = (): PersistedStateV2 => {
     console.error('Failed to load persisted editor state:', error);
   }
 
+  return null;
+};
+
+const migrateV2ToV3 = (state: PersistedStateV2): PersistedState => ({
+  version: 3,
+  activeSourceId: state.activeSourceId,
+  sources: state.sources,
+  clips: state.clips,
+  ingestJobs: {},
+  suggestionIndex: {},
+  variationIndex: {},
+  renderJobs: {},
+});
+
+const loadPersistedState = (): PersistedState => {
+  if (typeof window === 'undefined') return defaultState;
+
+  try {
+    const stored = localStorage.getItem(STATE_KEY_V3);
+    if (stored) {
+      const parsed = JSON.parse(stored) as Partial<PersistedState>;
+      return {
+        ...defaultState,
+        ...parsed,
+        version: 3,
+      };
+    }
+
+    const legacyV2 = loadPersistedStateV2();
+    if (legacyV2) {
+      const migrated = migrateV2ToV3(legacyV2);
+      try {
+        localStorage.setItem(STATE_KEY_V3, JSON.stringify(migrated));
+      } catch (error) {
+        console.error('Failed to persist migrated state:', error);
+      }
+      return migrated;
+    }
+  } catch (error) {
+    console.error('Failed to load persisted editor state:', error);
+  }
+
   return defaultState;
 };
 
@@ -149,16 +247,16 @@ const getSegmentSourceId = (clip: Clip, segmentIndex = 0): SourceId | null => {
 };
 
 export default function VideoEditor() {
+  const initialState = getInitialState();
   const [sources, setSources] = useState<Record<SourceId, VideoSource>>(
-    () => getInitialState().sources
+    () => initialState.sources
   );
-  const [clips, setClips] = useState<Clip[]>(() => getInitialState().clips);
+  const [clips, setClips] = useState<Clip[]>(() => initialState.clips);
   const [activeSourceId, setActiveSourceId] = useState<SourceId | null>(() => {
-    const initial = getInitialState();
-    if (initial.activeSourceId && initial.sources[initial.activeSourceId]) {
-      return initial.activeSourceId;
+    if (initialState.activeSourceId && initialState.sources[initialState.activeSourceId]) {
+      return initialState.activeSourceId;
     }
-    return Object.keys(initial.sources)[0] ?? null;
+    return Object.keys(initialState.sources)[0] ?? null;
   });
   const [selectedClips, setSelectedClips] = useState<Set<number>>(() => new Set());
   const [clipScope, setClipScope] = useState<'active' | 'all'>('active');
@@ -168,12 +266,33 @@ export default function VideoEditor() {
   const [textModalOpen, setTextModalOpen] = useState(false);
   const [currentEditingClipId, setCurrentEditingClipId] = useState<number | null>(null);
   const [isTutorialOpen, setIsTutorialOpen] = useState(false);
+  const [ingestJobs, setIngestJobs] = useState<Record<string, PersistedIngestJob>>(
+    () => initialState.ingestJobs
+  );
+  const [suggestionsBySource, setSuggestionsBySource] = useState<
+    Record<SourceId, AISuggestedClip[]>
+  >({});
+  const [variationSets, setVariationSets] = useState<Record<number, VariationSet>>({});
+  const [renderJobs, setRenderJobs] = useState<Record<string, RenderJob>>(() => {
+    const persisted = initialState.renderJobs;
+    return Object.fromEntries(
+      Object.entries(persisted).map(([id, job]) => [
+        id,
+        {
+          ...job,
+        } as RenderJob,
+      ])
+    );
+  });
+  const [isIngestModalOpen, setIsIngestModalOpen] = useState(false);
+  const [isRenderDrawerOpen, setIsRenderDrawerOpen] = useState(false);
+  const [variationTargetClipId, setVariationTargetClipId] = useState<number | null>(null);
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const sourcesRef = useRef<Record<SourceId, VideoSource>>({});
   const multiClipCounterRef = useRef<number>(
-    getInitialState().clips.filter((clip) => clip.sourceId === null).length + 1
+    initialState.clips.filter((clip) => clip.sourceId === null).length + 1
   );
 
   useEffect(() => {
@@ -189,19 +308,56 @@ export default function VideoEditor() {
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    const payload: PersistedStateV2 = {
-      version: 2,
+    const suggestionIndex = Object.fromEntries(
+      Object.entries(suggestionsBySource).map(([sourceId, items]) => [
+        sourceId,
+        { count: items.length, lastUpdated: Date.now() },
+      ])
+    );
+    const variationIndex = Object.fromEntries(
+      Object.entries(variationSets).map(([clipId, set]) => [
+        Number(clipId),
+        { count: set.items.length, lastUpdated: set.createdAt },
+      ])
+    );
+    const compactRenderJobs = Object.fromEntries(
+      Object.entries(renderJobs).map(([id, job]) => [
+        id,
+        {
+          id: job.id,
+          status: job.status,
+          progress: job.progress,
+          variationIds: job.variationIds,
+          submittedAt: job.submittedAt,
+          updatedAt: job.updatedAt,
+        },
+      ])
+    );
+    const payload: PersistedState = {
+      version: 3,
       activeSourceId,
       sources,
       clips,
+      ingestJobs,
+      suggestionIndex,
+      variationIndex,
+      renderJobs: compactRenderJobs,
     };
 
     try {
-      localStorage.setItem(STATE_KEY_V2, JSON.stringify(payload));
+      localStorage.setItem(STATE_KEY_V3, JSON.stringify(payload));
     } catch (error) {
       console.error('Failed to persist editor state:', error);
     }
-  }, [sources, clips, activeSourceId]);
+  }, [
+    activeSourceId,
+    sources,
+    clips,
+    ingestJobs,
+    suggestionsBySource,
+    variationSets,
+    renderJobs,
+  ]);
 
   useEffect(() => {
     return () => {
@@ -227,6 +383,15 @@ export default function VideoEditor() {
     }
     return clips;
   }, [clips, activeSourceId, effectiveClipScope]);
+
+  const variationTargetClip =
+    variationTargetClipId !== null
+      ? clips.find((clip) => clip.id === variationTargetClipId) ?? null
+      : null;
+  const variationTargetItems =
+    variationTargetClipId !== null
+      ? variationSets[variationTargetClipId]?.items ?? []
+      : [];
 
   const addVideos = (files: File[]) => {
     if (!files.length) return;
@@ -547,21 +712,238 @@ export default function VideoEditor() {
     );
   };
 
+  const handleIngestCompleted = (drafts: IngestSourceDraft[], job: IngestJob) => {
+    const existingChecksums = new Set(
+      Object.values(sources)
+        .map((source) => source.checksum)
+        .filter((checksum): checksum is string => Boolean(checksum))
+    );
+
+    const newSources: Record<SourceId, VideoSource> = {};
+    const createdSourceIds: SourceId[] = [];
+
+    drafts.forEach((draft) => {
+      if (!draft.proxyUrl || !draft.checksum || existingChecksums.has(draft.checksum)) {
+        return;
+      }
+      const id = createSourceId();
+      existingChecksums.add(draft.checksum);
+      createdSourceIds.push(id);
+      newSources[id] = {
+        id,
+        name: draft.name,
+        fileName: draft.fileName,
+        url: draft.proxyUrl,
+        proxyUrl: draft.proxyUrl,
+        proxyReady: true,
+        duration: draft.durationSec,
+        trimStart: 0,
+        trimEnd: draft.durationSec,
+        clipCounter: 1,
+        createdAt: Date.now(),
+        origin: 'connector',
+        connector: job.connector,
+        externalId: draft.externalId,
+        checksum: draft.checksum,
+        metadata: draft.metadata,
+        ingestJobId: job.id,
+      };
+    });
+
+    if (Object.keys(newSources).length) {
+      setSources((prev) => ({ ...prev, ...newSources }));
+      if (createdSourceIds[0]) {
+        selectActiveSource(createdSourceIds[0]);
+      }
+    }
+
+    setIngestJobs((prev) => ({
+      ...prev,
+      [job.id]: {
+        id: job.id,
+        status: job.status,
+        progress: job.progress,
+        connector: job.connector,
+        sourceIds: createdSourceIds,
+      },
+    }));
+    setIsIngestModalOpen(false);
+  };
+
+  const runShotMiningForActive = async () => {
+    if (!activeSource) {
+      alert('Select a source before running the Shot Miner.');
+      return;
+    }
+    const proxy = activeSource.proxyUrl ?? activeSource.url;
+    if (!proxy) {
+      alert('This source is missing a playable proxy.');
+      return;
+    }
+
+    try {
+      const { suggestions } = await runShotMiner({
+        sourceId: activeSource.id,
+        proxyUrl: proxy,
+        mode: 'fast',
+      });
+      setSuggestionsBySource((prev) => ({ ...prev, [activeSource.id]: suggestions }));
+    } catch (error) {
+      console.error('Shot miner failed', error);
+      alert('Failed to generate suggestions. Try again in a moment.');
+    }
+  };
+
+  const acceptSuggestion = (sourceId: SourceId, suggestionId: string) => {
+    const suggestions = suggestionsBySource[sourceId];
+    const suggestion = suggestions?.find((item) => item.id === suggestionId);
+    if (!suggestion) return;
+
+    const duration = suggestion.segments.reduce(
+      (sum, segment) => sum + Math.max(0, segment.end - segment.start),
+      0
+    );
+
+    const newClip: Clip = {
+      id: Date.now(),
+      name: `AI Clip ${(sources[sourceId]?.clipCounter ?? 0) + 1}`,
+      sourceId,
+      segments: suggestion.segments,
+      duration,
+      isCombined: suggestion.segments.length > 1,
+      textOverlay: null,
+    };
+
+    setClips((prev) => [...prev, newClip]);
+    setSources((prev) => {
+      const target = prev[sourceId];
+      if (!target) return prev;
+      return {
+        ...prev,
+        [sourceId]: {
+          ...target,
+          clipCounter: target.clipCounter + 1,
+        },
+      };
+    });
+    setSuggestionsBySource((prev) => ({
+      ...prev,
+      [sourceId]: (prev[sourceId] ?? []).filter((item) => item.id !== suggestionId),
+    }));
+  };
+
+  const discardSuggestion = (sourceId: SourceId, suggestionId: string) => {
+    setSuggestionsBySource((prev) => ({
+      ...prev,
+      [sourceId]: (prev[sourceId] ?? []).filter((item) => item.id !== suggestionId),
+    }));
+  };
+
+  const openVariationPanelFor = (clipId: number) => {
+    setVariationTargetClipId(clipId);
+  };
+
+  const closeVariationPanel = () => setVariationTargetClipId(null);
+
+  const generateVariationsFor = async (
+    clipId: number,
+    args: { prompt?: string; templateIds: string[]; count?: number }
+  ) => {
+    const targetClip = clips.find((clip) => clip.id === clipId);
+    if (!targetClip) return;
+
+    try {
+      const { variationSet } = await generateVariations({
+        clip: targetClip,
+        prompt: args.prompt,
+        templateIds: args.templateIds,
+        count: args.count,
+      });
+      setVariationSets((prev) => ({ ...prev, [clipId]: variationSet }));
+    } catch (error) {
+      console.error('Failed to generate variations', error);
+      alert('Unable to generate variations right now.');
+    }
+  };
+
+  const queueRenderFor = async (variationIds: string[]) => {
+    if (!variationIds.length) return;
+    try {
+      const { job } = await createRenderJob({ variationIds });
+      setRenderJobs((prev) => ({ ...prev, [job.id]: job }));
+      setIsRenderDrawerOpen(true);
+    } catch (error) {
+      console.error('Failed to queue render job', error);
+      alert('Unable to queue render job at the moment.');
+    }
+  };
+
+  const refreshRenderJobs = useCallback(async () => {
+    try {
+      const { jobs } = await listRenderJobs();
+      setRenderJobs((prev) => {
+        const next = { ...prev };
+        jobs.forEach((job) => {
+          next[job.id] = job;
+        });
+        return next;
+      });
+    } catch (error) {
+      console.error('Failed to refresh render jobs', error);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!isRenderDrawerOpen) return;
+    const interval = setInterval(() => {
+      refreshRenderJobs();
+    }, 2500);
+    return () => clearInterval(interval);
+  }, [isRenderDrawerOpen, refreshRenderJobs]);
+
   if (!Object.keys(sources).length) {
     return (
       <div className="min-h-screen bg-[#1a1a1a] text-white p-6">
         <div className="max-w-[1400px] mx-auto">
           <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
             <h1 className="text-2xl font-semibold m-0">Video Clip Manager</h1>
-            <button
-              onClick={() => setIsTutorialOpen(true)}
-              className="bg-[#444] text-white border border-[#555] px-4 py-2 rounded-lg cursor-pointer text-sm font-medium hover:bg-[#555] transition-all"
+            <div
+              className="flex flex-wrap items-center gap-2"
+              data-tour-id="automations"
             >
-              Tutorial
-            </button>
+              <button
+                onClick={() => setIsIngestModalOpen(true)}
+                className="bg-[#0a84ff] text-white border-none px-4 py-2 rounded-lg cursor-pointer text-sm font-medium hover:bg-[#0066cc] transition-all"
+              >
+                Connect &amp; Ingest
+              </button>
+              <button
+                onClick={() => setIsRenderDrawerOpen(true)}
+                className="bg-[#444] text-white border border-[#555] px-4 py-2 rounded-lg cursor-pointer text-sm font-medium hover:bg-[#555] transition-all"
+              >
+                Render Queue
+              </button>
+              <button
+                onClick={() => setIsTutorialOpen(true)}
+                className="bg-[#444] text-white border border-[#555] px-4 py-2 rounded-lg cursor-pointer text-sm font-medium hover:bg-[#555] transition-all"
+              >
+                Tutorial
+              </button>
+            </div>
           </div>
           <VideoImport onVideosLoad={addVideos} />
           <TutorialModal isOpen={isTutorialOpen} onClose={() => setIsTutorialOpen(false)} />
+          <IngestConnectModal
+            isOpen={isIngestModalOpen}
+            onClose={() => setIsIngestModalOpen(false)}
+            onIngestCompleted={handleIngestCompleted}
+          />
+          <RenderQueueDrawer
+            isOpen={isRenderDrawerOpen}
+            jobs={Object.values(renderJobs)}
+            onClose={() => setIsRenderDrawerOpen(false)}
+            onRefresh={refreshRenderJobs}
+          />
         </div>
       </div>
     );
@@ -572,12 +954,40 @@ export default function VideoEditor() {
       <div className="max-w-[1400px] mx-auto">
         <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
           <h1 className="text-2xl font-semibold m-0">Video Clip Manager</h1>
-          <button
-            onClick={() => setIsTutorialOpen(true)}
-            className="bg-[#444] text-white border border-[#555] px-4 py-2 rounded-lg cursor-pointer text-sm font-medium hover:bg-[#555] transition-all"
+          <div
+            className="flex flex-wrap items-center gap-2"
+            data-tour-id="automations"
           >
-            Tutorial
-          </button>
+            <button
+              onClick={() => setIsIngestModalOpen(true)}
+              className="bg-[#0a84ff] text-white border-none px-4 py-2 rounded-lg cursor-pointer text-sm font-medium hover:bg-[#0066cc] transition-all"
+            >
+              Connect &amp; Ingest
+            </button>
+            <button
+              onClick={runShotMiningForActive}
+              disabled={!activeSource}
+              className={`px-4 py-2 rounded-lg text-sm font-medium border transition-all ${
+                activeSource
+                  ? 'bg-[#444] text-white border-[#555] hover:bg-[#555]'
+                  : 'bg-[#333] text-[#777] border-[#444] cursor-not-allowed'
+              }`}
+            >
+              Auto-Mine Shots
+            </button>
+            <button
+              onClick={() => setIsRenderDrawerOpen(true)}
+              className="bg-[#444] text-white border border-[#555] px-4 py-2 rounded-lg cursor-pointer text-sm font-medium hover:bg-[#555] transition-all"
+            >
+              Render Queue
+            </button>
+            <button
+              onClick={() => setIsTutorialOpen(true)}
+              className="bg-[#444] text-white border border-[#555] px-4 py-2 rounded-lg cursor-pointer text-sm font-medium hover:bg-[#555] transition-all"
+            >
+              Tutorial
+            </button>
+          </div>
         </div>
 
         <div className="flex flex-col lg:flex-row gap-6">
@@ -593,7 +1003,7 @@ export default function VideoEditor() {
           <div className="flex-1 flex flex-col gap-5">
             {activeSource ? (
               <>
-                <div className="bg-[#2a2a2a] rounded-xl p-5">
+                <div className="bg-[#2a2a2a] rounded-xl p-5" data-tour-id="player">
                   <VideoPlayer
                     activeSource={activeSource}
                     sourcesById={sources}
@@ -638,7 +1048,15 @@ export default function VideoEditor() {
                     onExitPreview={exitPreviewMode}
                   />
                 </div>
-
+                {activeSourceId &&
+                  (suggestionsBySource[activeSourceId]?.length ?? 0) > 0 && (
+                    <SuggestedClipsPanel
+                      sourceId={activeSourceId}
+                      suggestions={suggestionsBySource[activeSourceId]!}
+                      onAccept={(id) => acceptSuggestion(activeSourceId, id)}
+                      onDiscard={(id) => discardSuggestion(activeSourceId, id)}
+                    />
+                  )}
                 <ClipList
                   clips={displayedClips}
                   sources={sources}
@@ -654,12 +1072,16 @@ export default function VideoEditor() {
                   onDuplicate={duplicateClip}
                   onDelete={deleteClip}
                   onEditText={openTextEditor}
+                  onOpenVariations={openVariationPanelFor}
                   onCombineSelected={combineSelectedClips}
                   onClearAll={clearAllClips}
                 />
               </>
             ) : (
-              <div className="bg-[#2a2a2a] rounded-xl p-10 text-center text-[#bbb] min-h-[400px] flex flex-col items-center justify-center">
+              <div
+                className="bg-[#2a2a2a] rounded-xl p-10 text-center text-[#bbb] min-h-[400px] flex flex-col items-center justify-center"
+                data-tour-id="player"
+              >
                 <p className="text-lg font-semibold mb-2">Select a video to start editing</p>
                 <p className="text-sm text-[#888]">
                   Use the Video Library to choose or add sources.
@@ -681,6 +1103,26 @@ export default function VideoEditor() {
           isOpen={isTutorialOpen}
           onClose={() => setIsTutorialOpen(false)}
         />
+        <IngestConnectModal
+          isOpen={isIngestModalOpen}
+          onClose={() => setIsIngestModalOpen(false)}
+          onIngestCompleted={handleIngestCompleted}
+        />
+        <RenderQueueDrawer
+          isOpen={isRenderDrawerOpen}
+          jobs={Object.values(renderJobs)}
+          onClose={() => setIsRenderDrawerOpen(false)}
+          onRefresh={refreshRenderJobs}
+        />
+        {variationTargetClipId !== null && (
+          <VariationPanel
+            clip={variationTargetClip}
+            variations={variationTargetItems}
+            onGenerate={(args) => generateVariationsFor(variationTargetClipId!, args)}
+            onQueueRender={queueRenderFor}
+            onClose={closeVariationPanel}
+          />
+        )}
       </div>
     </div>
   );

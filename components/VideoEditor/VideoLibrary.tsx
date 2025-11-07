@@ -54,6 +54,7 @@ export default function VideoLibrary({
       className="bg-[#2a2a2a] rounded-xl p-4 flex flex-col gap-4 max-w-[320px] w-full border border-[#333]"
       onDrop={handleDrop}
       onDragOver={handleDragOver}
+      data-tour-id="library"
     >
       <div className="flex items-center justify-between">
         <div>
@@ -88,11 +89,19 @@ export default function VideoLibrary({
       ) : (
         <div className="flex flex-col gap-3 overflow-auto pr-1">
           {sourceList.map((source) => (
-            <button
+            <div
               key={source.id}
+              role="button"
+              tabIndex={0}
               onClick={() => onSelectSource(source.id)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault();
+                  onSelectSource(source.id);
+                }
+              }}
               className={`
-                text-left bg-[#333] rounded-lg p-3 border transition-all relative
+                text-left bg-[#333] rounded-lg p-3 border transition-all relative cursor-pointer
                 ${activeSourceId === source.id ? 'border-[#0a84ff] shadow-[0_0_0_1px_rgba(10,132,255,0.6)]' : 'border-transparent hover:border-[#0a84ff]/40'}
                 ${!source.url ? 'opacity-80' : ''}
               `}
@@ -109,6 +118,18 @@ export default function VideoLibrary({
                   {source.duration > 0 ? formatTime(source.duration) : '–:–'}
                 </p>
                 <p className="m-0 truncate text-[#888]">{source.fileName}</p>
+                <div className="flex flex-wrap gap-2 pt-1">
+                  {source.origin === 'connector' && source.connector && (
+                    <span className="text-[10px] uppercase tracking-wide bg-[#3a3a3a] px-2 py-0.5 rounded-full text-[#ddd] border border-[#4a4a4a]">
+                      {source.connector.toUpperCase()}
+                    </span>
+                  )}
+                  {source.proxyReady === false && (
+                    <span className="text-[10px] text-[#ff9f0a] uppercase tracking-wide">
+                      Proxy Pending
+                    </span>
+                  )}
+                </div>
                 {!source.url && (
                   <span className="text-[10px] text-[#ff9f0a] uppercase tracking-wide">
                     Re-import to preview
@@ -117,6 +138,7 @@ export default function VideoLibrary({
               </div>
 
               <button
+                type="button"
                 onClick={(event) => {
                   event.stopPropagation();
                   onRemoveSource(source.id);
@@ -126,7 +148,7 @@ export default function VideoLibrary({
               >
                 ×
               </button>
-            </button>
+            </div>
           ))}
         </div>
       )}
