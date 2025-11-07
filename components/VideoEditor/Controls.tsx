@@ -5,7 +5,7 @@ import { Clip, ViewMode } from '@/types';
 import { formatTime } from '@/lib/utils';
 
 interface ControlsProps {
-  videoRef: RefObject<HTMLVideoElement>;
+  videoRef: RefObject<HTMLVideoElement | null>;
   trimStart: number;
   trimEnd: number;
   viewMode: ViewMode;

@@ -6,8 +6,8 @@ import { hexToRgb } from '@/lib/utils';
 
 interface VideoPlayerProps {
   videoFile: File;
-  videoRef: RefObject<HTMLVideoElement>;
-  canvasRef: RefObject<HTMLCanvasElement>;
+  videoRef: RefObject<HTMLVideoElement | null>;
+  canvasRef: RefObject<HTMLCanvasElement | null>;
   viewMode: ViewMode;
   currentPreviewClip: Clip | null;
   currentSegmentIndex: number;
