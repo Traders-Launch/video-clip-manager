@@ -254,6 +254,7 @@ const getSegmentSourceId = (clip: Clip, segmentIndex = 0): SourceId | null => {
 };
 
 export default function VideoEditor() {
+  const [mounted, setMounted] = useState(false);
   const initialState = getInitialState();
   const [sources, setSources] = useState<Record<SourceId, VideoSource>>(
     () => initialState.sources
@@ -267,6 +268,10 @@ export default function VideoEditor() {
   );
   const [selectedClips, setSelectedClips] = useState<Set<number>>(() => new Set());
   const [clipScope, setClipScope] = useState<'active' | 'all'>('all');
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
   const [viewMode, setViewMode] = useState<ViewMode>('edit');
   const [currentPreviewClip, setCurrentPreviewClip] = useState<Clip | null>(null);
   const [currentSegmentIndex, setCurrentSegmentIndex] = useState(0);
@@ -1125,6 +1130,18 @@ export default function VideoEditor() {
       </div>
     </div>
   );
+
+  // Prevent hydration mismatch by waiting for client-side mount
+  if (!mounted) {
+    return (
+      <div className="min-h-screen bg-[#1a1a1a] text-white p-6">
+        <div className="max-w-[1400px] mx-auto">
+          <h1 className="text-2xl font-semibold mb-6">Video Clip Manager</h1>
+          <div className="text-center py-10 text-[#666]">Loading...</div>
+        </div>
+      </div>
+    );
+  }
 
   if (!Object.keys(sources).length) {
     return (
