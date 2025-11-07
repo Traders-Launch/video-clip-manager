@@ -901,6 +901,34 @@ export default function VideoEditor() {
     return () => clearInterval(interval);
   }, [isRenderDrawerOpen, refreshRenderJobs]);
 
+  const statusCallout = (
+    <div className="bg-[#1f1f1f] border border-[#333] rounded-xl p-4 text-sm text-[#ddd] mt-4">
+      <p className="text-xs uppercase tracking-[0.3em] text-[#777] mb-3">
+        Live demo status
+      </p>
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div>
+          <span className="text-[11px] font-semibold uppercase tracking-wide text-[#30d158]">
+            Works today
+          </span>
+          <ul className="mt-2 space-y-1 text-xs text-[#bbb] list-disc list-inside">
+            <li>Mock connector ingest, AI shot miner, variation templates, and render queue.</li>
+            <li>All data stays in your browser/localStorage—no uploads leave the page.</li>
+          </ul>
+        </div>
+        <div>
+          <span className="text-[11px] font-semibold uppercase tracking-wide text-[#ff9f0a]">
+            Coming soon
+          </span>
+          <ul className="mt-2 space-y-1 text-xs text-[#bbb] list-disc list-inside">
+            <li>Real cloud connectors (Drive/S3) plus background workers backed by Redis/SQS.</li>
+            <li>GPU render farm + shared team storage using the env vars noted in `.env.example`.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  );
+
   if (!Object.keys(sources).length) {
     return (
       <div className="min-h-screen bg-[#1a1a1a] text-white p-6">
@@ -914,23 +942,27 @@ export default function VideoEditor() {
               <button
                 onClick={() => setIsIngestModalOpen(true)}
                 className="bg-[#0a84ff] text-white border-none px-4 py-2 rounded-lg cursor-pointer text-sm font-medium hover:bg-[#0066cc] transition-all"
+                title="Uses the mock connector + local storage in this demo build"
               >
                 Connect &amp; Ingest
               </button>
               <button
                 onClick={() => setIsRenderDrawerOpen(true)}
                 className="bg-[#444] text-white border border-[#555] px-4 py-2 rounded-lg cursor-pointer text-sm font-medium hover:bg-[#555] transition-all"
+                title="Shows placeholder outputs generated locally"
               >
                 Render Queue
               </button>
               <button
                 onClick={() => setIsTutorialOpen(true)}
                 className="bg-[#444] text-white border border-[#555] px-4 py-2 rounded-lg cursor-pointer text-sm font-medium hover:bg-[#555] transition-all"
+                title="Overview + guided tour (notes on what’s live vs coming)"
               >
                 Tutorial
               </button>
             </div>
           </div>
+          {statusCallout}
           <VideoImport onVideosLoad={addVideos} />
           <TutorialModal isOpen={isTutorialOpen} onClose={() => setIsTutorialOpen(false)} />
           <IngestConnectModal
@@ -961,6 +993,7 @@ export default function VideoEditor() {
             <button
               onClick={() => setIsIngestModalOpen(true)}
               className="bg-[#0a84ff] text-white border-none px-4 py-2 rounded-lg cursor-pointer text-sm font-medium hover:bg-[#0066cc] transition-all"
+              title="Uses the mock connector + local storage in this demo build"
             >
               Connect &amp; Ingest
             </button>
@@ -972,23 +1005,27 @@ export default function VideoEditor() {
                   ? 'bg-[#444] text-white border-[#555] hover:bg-[#555]'
                   : 'bg-[#333] text-[#777] border-[#444] cursor-not-allowed'
               }`}
+              title="Runs the mocked AI shot miner locally"
             >
               Auto-Mine Shots
             </button>
             <button
               onClick={() => setIsRenderDrawerOpen(true)}
               className="bg-[#444] text-white border border-[#555] px-4 py-2 rounded-lg cursor-pointer text-sm font-medium hover:bg-[#555] transition-all"
+              title="Placeholder render jobs with fake download URLs for now"
             >
               Render Queue
             </button>
             <button
               onClick={() => setIsTutorialOpen(true)}
               className="bg-[#444] text-white border border-[#555] px-4 py-2 rounded-lg cursor-pointer text-sm font-medium hover:bg-[#555] transition-all"
+              title="Overview + guided tour (notes on what’s live vs coming)"
             >
               Tutorial
             </button>
           </div>
         </div>
+        {statusCallout}
 
         <div className="flex flex-col lg:flex-row gap-6">
           <VideoLibrary

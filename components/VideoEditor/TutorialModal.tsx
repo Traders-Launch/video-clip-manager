@@ -41,6 +41,14 @@ const tutorialSections = [
       'Need to start over? Reset Workspace clears clips/sources while leaving connector metadata intact.',
     ],
   },
+  {
+    title: 'What’s live vs. coming',
+    bullets: [
+      'This playground runs 100% locally with mocked connectors, AI, and rendering so you can try flows instantly.',
+      'Environment variables in `.env.example` outline the real services (Drive/S3 connectors, Redis/SQS queue, render bucket) that will replace the mocks.',
+      'Expect no cloud persistence yet—team storage & GPU rendering land once those envs are populated.',
+    ],
+  },
 ];
 
 const tourSteps = [
