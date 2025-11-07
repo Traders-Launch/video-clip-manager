@@ -56,6 +56,7 @@ interface PersistedStateV3 {
   activeSourceId: SourceId | null;
   sources: Record<SourceId, VideoSource>;
   clips: Clip[];
+  globalClipCounter: number;
   ingestJobs: Record<string, PersistedIngestJob>;
   suggestionIndex: Record<
     SourceId,
@@ -91,10 +92,22 @@ const defaultState: PersistedState = {
   activeSourceId: null,
   sources: {},
   clips: [],
+  globalClipCounter: 1,
   ingestJobs: {},
   suggestionIndex: {},
   variationIndex: {},
   renderJobs: {},
+};
+
+let cachedInitialState: PersistedState | null = null;
+const getInitialState = (): PersistedState => {
+  if (typeof window === 'undefined') {
+    return defaultState;
+  }
+  if (!cachedInitialState) {
+    cachedInitialState = loadPersistedState();
+  }
+  return cachedInitialState;
 };
 
 const createSourceId = () =>
@@ -196,6 +209,7 @@ const migrateV2ToV3 = (state: PersistedStateV2): PersistedState => ({
   activeSourceId: state.activeSourceId,
   sources: state.sources,
   clips: state.clips,
+  globalClipCounter: state.clips.length + 1,
   ingestJobs: {},
   suggestionIndex: {},
   variationIndex: {},
@@ -240,11 +254,17 @@ const getSegmentSourceId = (clip: Clip, segmentIndex = 0): SourceId | null => {
 };
 
 export default function VideoEditor() {
+  const initialState = getInitialState();
   const [sources, setSources] = useState<Record<SourceId, VideoSource>>(
-    () => defaultState.sources
+    () => initialState.sources
   );
-  const [clips, setClips] = useState<Clip[]>(() => defaultState.clips);
-  const [activeSourceId, setActiveSourceId] = useState<SourceId | null>(defaultState.activeSourceId);
+  const [clips, setClips] = useState<Clip[]>(() => initialState.clips);
+  const [globalClipCounter, setGlobalClipCounter] = useState<number>(
+    () => initialState.globalClipCounter
+  );
+  const [activeSourceId, setActiveSourceId] = useState<SourceId | null>(
+    () => initialState.activeSourceId
+  );
   const [selectedClips, setSelectedClips] = useState<Set<number>>(() => new Set());
   const [clipScope, setClipScope] = useState<'active' | 'all'>('all');
   const [viewMode, setViewMode] = useState<ViewMode>('edit');
@@ -455,6 +475,7 @@ export default function VideoEditor() {
       activeSourceId,
       sources,
       clips,
+      globalClipCounter,
       ingestJobs,
       suggestionIndex,
       variationIndex,
@@ -470,6 +491,7 @@ export default function VideoEditor() {
     activeSourceId,
     sources,
     clips,
+    globalClipCounter,
     ingestJobs,
     suggestionsBySource,
     variationSets,
@@ -598,9 +620,10 @@ export default function VideoEditor() {
       Object.values(sources).forEach(revokeSourceUrl);
       setSources({});
       setClips([]);
+      setGlobalClipCounter(1);
       setSelectedClips(new Set());
       selectActiveSource(null);
-      setClipScope('active');
+      setClipScope('all');
       setPersistenceWarning(null);
       setIsRestoringSources(false);
       clearVideoStore().catch((error) => {
@@ -671,14 +694,17 @@ export default function VideoEditor() {
 
   const createClip = () => {
     if (!activeSource || activeSource.duration === 0) return;
-    const { trimStart, trimEnd, clipCounter, id: sourceId } = activeSource;
+    const { trimStart, trimEnd, id: sourceId, name: sourceName } = activeSource;
     const safeDuration = Math.max(0, trimEnd - trimStart);
 
     if (safeDuration === 0) return;
 
+    const videoBaseName = stripExtension(sourceName);
+    const clipName = `${videoBaseName}-${globalClipCounter}`;
+
     const newClip: Clip = {
       id: Date.now(),
-      name: `Clip ${clipCounter}`,
+      name: clipName,
       sourceId,
       segments: [{ start: trimStart, end: trimEnd, sourceId }],
       duration: safeDuration,
@@ -687,10 +713,7 @@ export default function VideoEditor() {
     };
 
     setClips((prev) => [...prev, newClip]);
-    setSources((prev) => ({
-      ...prev,
-      [sourceId]: { ...prev[sourceId], clipCounter: clipCounter + 1 },
-    }));
+    setGlobalClipCounter((prev) => prev + 1);
   };
 
   const deleteClip = (clipId: number) => {
@@ -805,19 +828,16 @@ export default function VideoEditor() {
       )
     );
 
-    let combinedName = 'Combined Clip';
+    let combinedName = `combined-${globalClipCounter}`;
     let combinedSourceId: SourceId | null = null;
 
     if (uniqueSourceIds.length === 1) {
       combinedSourceId = uniqueSourceIds[0] ?? null;
       const owningSource = combinedSourceId ? sources[combinedSourceId] : null;
       if (owningSource) {
-        combinedName = `Combined ${owningSource.clipCounter}`;
+        const videoBaseName = stripExtension(owningSource.name);
+        combinedName = `${videoBaseName}-${globalClipCounter}`;
       }
-    } else {
-      const multiCounter = multiClipCounterRef.current;
-      combinedName = `Multi Combined ${multiCounter}`;
-      multiClipCounterRef.current = multiCounter + 1;
     }
 
     const combined: Clip = {
@@ -832,20 +852,7 @@ export default function VideoEditor() {
 
     setClips((prev) => [...prev, combined]);
     setSelectedClips(new Set());
-
-    if (combinedSourceId) {
-      setSources((prev) => {
-        const target = prev[combinedSourceId as SourceId];
-        if (!target) return prev;
-        return {
-          ...prev,
-          [combinedSourceId]: {
-            ...target,
-            clipCounter: target.clipCounter + 1,
-          },
-        };
-      });
-    }
+    setGlobalClipCounter((prev) => prev + 1);
   };
 
   const previewClip = (clipId: number) => {
@@ -977,6 +984,10 @@ export default function VideoEditor() {
     const suggestion = suggestions?.find((item) => item.id === suggestionId);
     if (!suggestion) return;
 
+    const source = sources[sourceId];
+    const videoBaseName = source ? stripExtension(source.name) : 'ai-clip';
+    const clipName = `${videoBaseName}-${globalClipCounter}`;
+
     const duration = suggestion.segments.reduce(
       (sum, segment) => sum + Math.max(0, segment.end - segment.start),
       0
@@ -984,7 +995,7 @@ export default function VideoEditor() {
 
     const newClip: Clip = {
       id: Date.now(),
-      name: `AI Clip ${(sources[sourceId]?.clipCounter ?? 0) + 1}`,
+      name: clipName,
       sourceId,
       segments: suggestion.segments,
       duration,
@@ -993,17 +1004,7 @@ export default function VideoEditor() {
     };
 
     setClips((prev) => [...prev, newClip]);
-    setSources((prev) => {
-      const target = prev[sourceId];
-      if (!target) return prev;
-      return {
-        ...prev,
-        [sourceId]: {
-          ...target,
-          clipCounter: target.clipCounter + 1,
-        },
-      };
-    });
+    setGlobalClipCounter((prev) => prev + 1);
     setSuggestionsBySource((prev) => ({
       ...prev,
       [sourceId]: (prev[sourceId] ?? []).filter((item) => item.id !== suggestionId),
