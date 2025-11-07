@@ -441,7 +441,7 @@ export default function VideoEditor() {
     const orderedSegments = selected.flatMap((clip) =>
       clip.segments.map((segment) => ({
         ...segment,
-        sourceId: segment.sourceId ?? clip.sourceId ?? null,
+        sourceId: segment.sourceId ?? clip.sourceId ?? undefined,
       }))
     );
 
