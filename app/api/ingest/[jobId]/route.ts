@@ -6,11 +6,11 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 interface RouteParams {
-  params: { jobId: string };
+  params: Promise<{ jobId: string }>;
 }
 
 export async function GET(_request: Request, { params }: RouteParams) {
-  const { jobId } = params;
+  const { jobId } = await params;
   if (!jobId) {
     return NextResponse.json({ error: 'Missing job id' }, { status: 400 });
   }

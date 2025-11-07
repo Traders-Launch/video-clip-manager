@@ -5,11 +5,12 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 interface Params {
-  params: { jobId: string };
+  params: Promise<{ jobId: string }>;
 }
 
 export async function GET(_request: Request, { params }: Params) {
-  const jobId = params?.jobId;
+  const resolvedParams = await params;
+  const jobId = resolvedParams?.jobId;
   if (!jobId) {
     return NextResponse.json({ error: 'Missing job id' }, { status: 400 });
   }
