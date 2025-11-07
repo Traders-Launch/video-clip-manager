@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, RefObject, useCallback } from 'react';
 import { Clip, ViewMode, VideoSource, SourceId } from '@/types';
-import { hexToRgb } from '@/lib/utils';
+import { drawTextOverlay } from '@/lib/textOverlay';
 
 interface VideoPlayerProps {
   activeSource: VideoSource | null;
@@ -14,6 +14,8 @@ interface VideoPlayerProps {
   currentSegmentIndex: number;
   onMetadataLoaded: () => void;
   onSegmentChange: (index: number) => void;
+  isPlaybackLocked: boolean;
+  isRestoring: boolean;
 }
 
 const getSegmentSourceId = (clip: Clip | null, segmentIndex: number): SourceId | null => {
@@ -33,6 +35,8 @@ export default function VideoPlayer({
   currentSegmentIndex,
   onMetadataLoaded,
   onSegmentChange,
+  isPlaybackLocked,
+  isRestoring,
 }: VideoPlayerProps) {
   const renderIntervalRef = useRef<number | null>(null);
   const loadedSourceIdRef = useRef<SourceId | null>(null);
@@ -68,7 +72,7 @@ export default function VideoPlayer({
 
   useEffect(() => {
     const video = videoRef.current;
-    if (!video || viewMode !== 'preview' || !currentPreviewClip) return;
+    if (!video || viewMode !== 'preview' || !currentPreviewClip || isPlaybackLocked) return;
 
     const targetSourceId = getSegmentSourceId(currentPreviewClip, currentSegmentIndex);
     if (!targetSourceId) return;
@@ -105,7 +109,16 @@ export default function VideoPlayer({
     sourcesById,
     videoRef,
     cleanupPendingLoadHandler,
+    isPlaybackLocked,
   ]);
+
+  useEffect(() => {
+    if (!isPlaybackLocked) return;
+    const video = videoRef.current;
+    if (video) {
+      video.pause();
+    }
+  }, [isPlaybackLocked, videoRef]);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -197,61 +210,23 @@ export default function VideoPlayer({
     <div className="relative">
       <video
         ref={videoRef}
-        controls
+        controls={!isPlaybackLocked}
         onLoadedMetadata={onMetadataLoaded}
-        className="w-full max-h-[500px] bg-black rounded-lg"
+        className={`w-full max-h-[500px] bg-black rounded-lg ${
+          isPlaybackLocked ? 'opacity-70' : ''
+        }`}
       />
       <canvas
         ref={canvasRef}
         className="w-full max-h-[500px] bg-black rounded-lg hidden absolute top-0 left-0"
       />
+      {isPlaybackLocked && (
+        <div className="absolute inset-0 flex items-center justify-center rounded-lg bg-black/70 text-center text-sm text-white px-6 pointer-events-none">
+          {isRestoring
+            ? 'Restoring imported videos from browser storage...'
+            : 'Source unavailable. Re-import the video to keep editing.'}
+        </div>
+      )}
     </div>
   );
-}
-
-function drawTextOverlay(
-  ctx: CanvasRenderingContext2D,
-  canvas: HTMLCanvasElement,
-  textOverlay: NonNullable<Clip['textOverlay']>
-) {
-  const { content, position, fontSize, textColor, bgColor, bgOpacity, fontWeight } = textOverlay;
-
-  ctx.font = `${fontWeight} ${fontSize}px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif`;
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-
-  const lines = content.split('\n');
-  const lineHeight = fontSize * 1.2;
-  const totalHeight = lines.length * lineHeight;
-
-  let startY: number;
-  if (position === 'top') {
-    startY = totalHeight / 2 + 40;
-  } else if (position === 'bottom') {
-    startY = canvas.height - totalHeight / 2 - 40;
-  } else {
-    startY = canvas.height / 2;
-  }
-
-  lines.forEach((line, index) => {
-    const y = startY + (index - (lines.length - 1) / 2) * lineHeight;
-    const textMetrics = ctx.measureText(line);
-    const textWidth = textMetrics.width;
-    const padding = 20;
-
-    // Draw background
-    const bgAlpha = bgOpacity / 100;
-    const rgb = hexToRgb(bgColor);
-    ctx.fillStyle = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${bgAlpha})`;
-    ctx.fillRect(
-      canvas.width / 2 - textWidth / 2 - padding,
-      y - fontSize / 2 - padding / 2,
-      textWidth + padding * 2,
-      lineHeight
-    );
-
-    // Draw text
-    ctx.fillStyle = textColor;
-    ctx.fillText(line, canvas.width / 2, y);
-  });
 }

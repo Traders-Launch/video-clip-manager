@@ -11,6 +11,7 @@ interface VideoLibraryProps {
   onAddVideos: (files: File[]) => void;
   onSelectSource: (sourceId: SourceId) => void;
   onRemoveSource: (sourceId: SourceId) => void;
+  isRestoring?: boolean;
 }
 
 export default function VideoLibrary({
@@ -20,6 +21,7 @@ export default function VideoLibrary({
   onAddVideos,
   onSelectSource,
   onRemoveSource,
+  isRestoring = false,
 }: VideoLibraryProps) {
   const sourceList = useMemo(
     () => Object.values(sources).sort((a, b) => a.createdAt - b.createdAt),
@@ -131,8 +133,16 @@ export default function VideoLibrary({
                   )}
                 </div>
                 {!source.url && (
-                  <span className="text-[10px] text-[#ff9f0a] uppercase tracking-wide">
-                    Re-import to preview
+                  <span
+                    className={`text-[10px] uppercase tracking-wide ${
+                      source.hasPersistentFile ? 'text-[#0a84ff]' : 'text-[#ff9f0a]'
+                    }`}
+                  >
+                    {source.hasPersistentFile
+                      ? isRestoring
+                        ? 'Restoring local copy...'
+                        : 'Local copy missing — re-import'
+                      : 'Re-import to preview'}
                   </span>
                 )}
               </div>

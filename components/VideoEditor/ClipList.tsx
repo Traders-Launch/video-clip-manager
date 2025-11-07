@@ -12,6 +12,7 @@ interface ClipListProps {
   hasActiveSource: boolean;
   selectedClips: Set<number>;
   selectedCount: number;
+  downloadingClipId: number | null;
   onScopeChange: (scope: 'active' | 'all') => void;
   onToggleSelection: (clipId: number) => void;
   onPreview: (clipId: number) => void;
@@ -21,6 +22,7 @@ interface ClipListProps {
   onOpenVariations: (clipId: number) => void;
   onCombineSelected: () => void;
   onClearAll: () => void;
+  onDownload: (clipId: number) => void;
 }
 
 export default function ClipList({
@@ -32,6 +34,7 @@ export default function ClipList({
   hasActiveSource,
   selectedClips,
   selectedCount,
+  downloadingClipId,
   onScopeChange,
   onToggleSelection,
   onPreview,
@@ -41,6 +44,7 @@ export default function ClipList({
   onOpenVariations,
   onCombineSelected,
   onClearAll,
+  onDownload,
 }: ClipListProps) {
   const viewingCopy =
     scope === 'all'
@@ -134,6 +138,8 @@ export default function ClipList({
               onDelete={() => onDelete(clip.id)}
               onEditText={() => onEditText(clip.id)}
               onOpenVariations={() => onOpenVariations(clip.id)}
+              onDownload={() => onDownload(clip.id)}
+              isDownloading={downloadingClipId === clip.id}
             />
           ))}
         </div>
@@ -152,6 +158,8 @@ interface ClipCardProps {
   onDelete: () => void;
   onEditText: () => void;
   onOpenVariations: () => void;
+  onDownload: () => void;
+  isDownloading: boolean;
 }
 
 function ClipCard({
@@ -164,6 +172,8 @@ function ClipCard({
   onDelete,
   onEditText,
   onOpenVariations,
+  onDownload,
+  isDownloading,
 }: ClipCardProps) {
   const firstSegment = clip.segments[0];
   const segmentInfo = clip.isCombined
@@ -237,6 +247,17 @@ function ClipCard({
           className="bg-[#444] text-white border-none px-3 py-1.5 rounded-lg cursor-pointer text-xs hover:bg-[#555] transition-all"
         >
           Preview
+        </button>
+
+        <button
+          onClick={onDownload}
+          disabled={isDownloading}
+          className={`
+            bg-[#00c7be] text-white border-none px-3 py-1.5 rounded-lg text-xs transition-all
+            ${isDownloading ? 'opacity-60 cursor-wait' : 'cursor-pointer hover:bg-[#00a497]'}
+          `}
+        >
+          {isDownloading ? 'Preparing...' : 'Download'}
         </button>
 
         <button

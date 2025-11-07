@@ -16,6 +16,7 @@ interface ControlsProps {
   onSetTrimEnd: () => void;
   onCreateClip: () => void;
   onExitPreview: () => void;
+  disabled?: boolean;
 }
 
 export default function Controls({
@@ -30,9 +31,18 @@ export default function Controls({
   onSetTrimEnd,
   onCreateClip,
   onExitPreview,
+  disabled = false,
 }: ControlsProps) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
+
+  useEffect(() => {
+    if (!disabled) return;
+    const video = videoRef.current;
+    if (video) {
+      video.pause();
+    }
+  }, [disabled, videoRef]);
 
   const getPreviewElapsedTime = (
     clip: Clip,
@@ -92,6 +102,7 @@ export default function Controls({
     viewMode === 'preview' && currentPreviewClip ? currentPreviewClip.duration : videoDuration;
 
   const togglePlayPause = () => {
+    if (disabled) return;
     const video = videoRef.current;
     if (!video) return;
 
@@ -115,7 +126,10 @@ export default function Controls({
 
       <button
         onClick={togglePlayPause}
-        className="bg-[#0a84ff] text-white border-none px-5 py-2.5 rounded-lg cursor-pointer text-sm font-medium hover:bg-[#0066cc] transition-all"
+        disabled={disabled}
+        className={`bg-[#0a84ff] text-white border-none px-5 py-2.5 rounded-lg text-sm font-medium transition-all ${
+          disabled ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer hover:bg-[#0066cc]'
+        }`}
       >
         {isPlaying ? 'Pause' : 'Play'}
       </button>
@@ -123,22 +137,40 @@ export default function Controls({
       {viewMode === 'edit' && (
         <>
           <button
-            onClick={onSetTrimStart}
-            className="bg-[#444] text-white border-none px-5 py-2.5 rounded-lg cursor-pointer text-sm font-medium hover:bg-[#555] transition-all"
+            onClick={() => {
+              if (disabled) return;
+              onSetTrimStart();
+            }}
+            disabled={disabled}
+            className={`bg-[#444] text-white border-none px-5 py-2.5 rounded-lg text-sm font-medium transition-all ${
+              disabled ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer hover:bg-[#555]'
+            }`}
           >
             Set In Point
           </button>
 
           <button
-            onClick={onSetTrimEnd}
-            className="bg-[#444] text-white border-none px-5 py-2.5 rounded-lg cursor-pointer text-sm font-medium hover:bg-[#555] transition-all"
+            onClick={() => {
+              if (disabled) return;
+              onSetTrimEnd();
+            }}
+            disabled={disabled}
+            className={`bg-[#444] text-white border-none px-5 py-2.5 rounded-lg text-sm font-medium transition-all ${
+              disabled ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer hover:bg-[#555]'
+            }`}
           >
             Set Out Point
           </button>
 
           <button
-            onClick={onCreateClip}
-            className="bg-[#30d158] text-white border-none px-5 py-2.5 rounded-lg cursor-pointer text-sm font-medium hover:bg-[#28a745] transition-all"
+            onClick={() => {
+              if (disabled) return;
+              onCreateClip();
+            }}
+            disabled={disabled}
+            className={`bg-[#30d158] text-white border-none px-5 py-2.5 rounded-lg text-sm font-medium transition-all ${
+              disabled ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer hover:bg-[#28a745]'
+            }`}
           >
             Create Clip
           </button>

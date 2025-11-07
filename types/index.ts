@@ -33,6 +33,7 @@ export interface VideoSource {
   clipCounter: number;
   createdAt: number;
   origin?: 'local' | 'connector';
+  hasPersistentFile?: boolean;
   connector?: ConnectorType;
   externalId?: string;
   checksum?: string;

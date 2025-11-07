@@ -14,6 +14,7 @@ import {
   ViewMode,
 } from '@/types';
 import { createRenderJob, generateVariations, listRenderJobs, runShotMiner } from '@/lib/client/api';
+import { exportClipToBlob } from '@/lib/exportClip';
 import VideoImport from './VideoImport';
 import VideoPlayer from './VideoPlayer';
 import Timeline from './Timeline';
@@ -26,6 +27,7 @@ import IngestConnectModal from '../Automations/IngestConnectModal';
 import SuggestedClipsPanel from '../Automations/SuggestedClipsPanel';
 import VariationPanel from '../Automations/VariationPanel';
 import RenderQueueDrawer from '../Automations/RenderQueueDrawer';
+import { clearAll as clearVideoStore, deleteFile, getFile, saveFile } from '@/lib/storage/videoStore';
 
 const LEGACY_STORAGE_KEY = 'video-clip-manager-clips';
 const LEGACY_COUNTER_KEY = 'video-clip-manager-counter';
@@ -93,17 +95,6 @@ const defaultState: PersistedState = {
   suggestionIndex: {},
   variationIndex: {},
   renderJobs: {},
-};
-
-let cachedInitialState: PersistedState | null = null;
-const getInitialState = (): PersistedState => {
-  if (typeof window === 'undefined') {
-    return defaultState;
-  }
-  if (!cachedInitialState) {
-    cachedInitialState = loadPersistedState();
-  }
-  return cachedInitialState;
 };
 
 const createSourceId = () =>
@@ -249,19 +240,13 @@ const getSegmentSourceId = (clip: Clip, segmentIndex = 0): SourceId | null => {
 };
 
 export default function VideoEditor() {
-  const initialState = getInitialState();
   const [sources, setSources] = useState<Record<SourceId, VideoSource>>(
-    () => initialState.sources
+    () => defaultState.sources
   );
-  const [clips, setClips] = useState<Clip[]>(() => initialState.clips);
-  const [activeSourceId, setActiveSourceId] = useState<SourceId | null>(() => {
-    if (initialState.activeSourceId && initialState.sources[initialState.activeSourceId]) {
-      return initialState.activeSourceId;
-    }
-    return Object.keys(initialState.sources)[0] ?? null;
-  });
+  const [clips, setClips] = useState<Clip[]>(() => defaultState.clips);
+  const [activeSourceId, setActiveSourceId] = useState<SourceId | null>(defaultState.activeSourceId);
   const [selectedClips, setSelectedClips] = useState<Set<number>>(() => new Set());
-  const [clipScope, setClipScope] = useState<'active' | 'all'>('active');
+  const [clipScope, setClipScope] = useState<'active' | 'all'>('all');
   const [viewMode, setViewMode] = useState<ViewMode>('edit');
   const [currentPreviewClip, setCurrentPreviewClip] = useState<Clip | null>(null);
   const [currentSegmentIndex, setCurrentSegmentIndex] = useState(0);
@@ -269,37 +254,166 @@ export default function VideoEditor() {
   const [currentEditingClipId, setCurrentEditingClipId] = useState<number | null>(null);
   const [isTutorialOpen, setIsTutorialOpen] = useState(false);
   const [ingestJobs, setIngestJobs] = useState<Record<string, PersistedIngestJob>>(
-    () => initialState.ingestJobs
+    () => defaultState.ingestJobs
   );
   const [suggestionsBySource, setSuggestionsBySource] = useState<
     Record<SourceId, AISuggestedClip[]>
   >({});
   const [variationSets, setVariationSets] = useState<Record<number, VariationSet>>({});
-  const [renderJobs, setRenderJobs] = useState<Record<string, RenderJob>>(() => {
-    const persisted = initialState.renderJobs;
-    return Object.fromEntries(
-      Object.entries(persisted).map(([id, job]) => [
+  const [renderJobs, setRenderJobs] = useState<Record<string, RenderJob>>(() => defaultState.renderJobs);
+  const [isIngestModalOpen, setIsIngestModalOpen] = useState(false);
+  const [isRenderDrawerOpen, setIsRenderDrawerOpen] = useState(false);
+  const [variationTargetClipId, setVariationTargetClipId] = useState<number | null>(null);
+  const [downloadingClipId, setDownloadingClipId] = useState<number | null>(null);
+  const [isRestoringSources, setIsRestoringSources] = useState(false);
+  const [persistenceWarning, setPersistenceWarning] = useState<string | null>(null);
+
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const sourcesRef = useRef<Record<SourceId, VideoSource>>({});
+  const multiClipCounterRef = useRef<number>(1);
+  const hasHydratedStateRef = useRef(false);
+
+  useEffect(() => {
+    sourcesRef.current = sources;
+  }, [sources]);
+
+  const persistVideoFile = useCallback(
+    async (sourceId: SourceId, file: File) => {
+      try {
+        await saveFile(sourceId, file);
+        setSources((prev) => {
+          const target = prev[sourceId];
+          if (!target || target.hasPersistentFile) {
+            return prev;
+          }
+          return {
+            ...prev,
+            [sourceId]: {
+              ...target,
+              hasPersistentFile: true,
+            },
+          };
+        });
+      } catch (error) {
+        console.error('Failed to persist video file', error);
+        setPersistenceWarning(
+          'Browser blocked persistent storage. Imported videos may disappear after refresh.'
+        );
+      }
+    },
+    [setSources, setPersistenceWarning]
+  );
+
+  const restorePersistedVideos = useCallback(async (snapshot: Record<SourceId, VideoSource>) => {
+    const candidates = Object.values(snapshot).filter(
+      (source) => source.hasPersistentFile && !source.url
+    );
+    if (!candidates.length) return;
+
+    setIsRestoringSources(true);
+
+    try {
+      await Promise.all(
+        candidates.map(async (source) => {
+          try {
+            const file = await getFile(source.id);
+            if (!file) {
+              setSources((prev) => {
+                const target = prev[source.id];
+                if (!target) return prev;
+                return {
+                  ...prev,
+                  [source.id]: { ...target, hasPersistentFile: false },
+                };
+              });
+              setPersistenceWarning(
+                'Some videos were cleared from browser storage. Re-import them to keep editing.'
+              );
+              return;
+            }
+
+            const objectUrl = URL.createObjectURL(file);
+            setSources((prev) => {
+              const target = prev[source.id];
+              if (!target) return prev;
+              revokeSourceUrl(target);
+              return {
+                ...prev,
+                [source.id]: {
+                  ...target,
+                  url: objectUrl,
+                },
+              };
+            });
+          } catch (error) {
+            console.error(`Failed to restore video ${source.id}`, error);
+            setPersistenceWarning(
+              'Unable to restore some videos from storage. Re-import them to keep editing.'
+            );
+          }
+        })
+      );
+    } finally {
+      setIsRestoringSources(false);
+    }
+  }, [setSources, setPersistenceWarning, setIsRestoringSources]);
+
+  useEffect(() => {
+    if (hasHydratedStateRef.current) return;
+    if (typeof window === 'undefined') return;
+
+    const persisted = loadPersistedState();
+    hasHydratedStateRef.current = true;
+
+    if (persisted === defaultState) {
+      multiClipCounterRef.current = 1;
+      return;
+    }
+
+    const sanitizedSources = Object.fromEntries(
+      Object.entries(persisted.sources).map(([id, source]) => {
+        const shouldResetUrl =
+          source.hasPersistentFile ||
+          (source.url.startsWith('blob:') && source.origin !== 'connector');
+        if (shouldResetUrl) {
+          return [
+            id,
+            {
+              ...source,
+              url: '',
+            },
+          ];
+        }
+        return [id, source];
+      })
+    ) as Record<SourceId, VideoSource>;
+
+    setSources(sanitizedSources);
+    setClips(persisted.clips);
+
+    const nextActiveId =
+      (persisted.activeSourceId && sanitizedSources[persisted.activeSourceId]
+        ? persisted.activeSourceId
+        : Object.keys(sanitizedSources)[0]) ?? null;
+    setActiveSourceId(nextActiveId);
+    setIngestJobs(persisted.ingestJobs);
+
+    const hydratedRenderJobs = Object.fromEntries(
+      Object.entries(persisted.renderJobs).map(([id, job]) => [
         id,
         {
           ...job,
         } as RenderJob,
       ])
     );
-  });
-  const [isIngestModalOpen, setIsIngestModalOpen] = useState(false);
-  const [isRenderDrawerOpen, setIsRenderDrawerOpen] = useState(false);
-  const [variationTargetClipId, setVariationTargetClipId] = useState<number | null>(null);
+    setRenderJobs(hydratedRenderJobs);
 
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const sourcesRef = useRef<Record<SourceId, VideoSource>>({});
-  const multiClipCounterRef = useRef<number>(
-    initialState.clips.filter((clip) => clip.sourceId === null).length + 1
-  );
+    multiClipCounterRef.current =
+      persisted.clips.filter((clip) => clip.sourceId === null).length + 1;
 
-  useEffect(() => {
-    sourcesRef.current = sources;
-  }, [sources]);
+    restorePersistedVideos(sanitizedSources);
+  }, [restorePersistedVideos]);
 
   const selectActiveSource = (nextSourceId: SourceId | null) => {
     setActiveSourceId(nextSourceId);
@@ -310,6 +424,7 @@ export default function VideoEditor() {
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
+    if (!hasHydratedStateRef.current) return;
     const suggestionIndex = Object.fromEntries(
       Object.entries(suggestionsBySource).map(([sourceId, items]) => [
         sourceId,
@@ -368,6 +483,7 @@ export default function VideoEditor() {
   }, []);
 
   const activeSource = activeSourceId ? sources[activeSourceId] : null;
+  const isPlaybackLocked = isRestoringSources || !activeSource?.url;
   const clipCountBySource = useMemo(() => {
     return clips.reduce<Record<SourceId, number>>((acc, clip) => {
       if (clip.sourceId) {
@@ -398,14 +514,16 @@ export default function VideoEditor() {
   const addVideos = (files: File[]) => {
     if (!files.length) return;
 
-    let lastAddedId: SourceId | null = null;
     const now = Date.now();
+    const newEntries = files.map((file, index) => ({
+      id: createSourceId(),
+      file,
+      createdAt: now + index,
+    }));
 
     setSources((prev) => {
       const next = { ...prev };
-      files.forEach((file, index) => {
-        const id = createSourceId();
-        lastAddedId = id;
+      newEntries.forEach(({ id, file, createdAt }) => {
         next[id] = {
           id,
           name: stripExtension(file.name) || file.name,
@@ -415,14 +533,20 @@ export default function VideoEditor() {
           trimStart: 0,
           trimEnd: 0,
           clipCounter: 1,
-          createdAt: now + index,
+          createdAt,
+          origin: 'local',
+          hasPersistentFile: false,
         };
       });
       return next;
     });
 
-    if (lastAddedId) {
-      selectActiveSource(lastAddedId);
+    newEntries.forEach(({ id, file }) => {
+      persistVideoFile(id, file);
+    });
+
+    if (newEntries.length) {
+      selectActiveSource(newEntries[newEntries.length - 1].id);
     }
   };
 
@@ -439,6 +563,11 @@ export default function VideoEditor() {
     if (!confirmed) return;
 
     revokeSourceUrl(target);
+    if (target.hasPersistentFile) {
+      deleteFile(target.id).catch((error) => {
+        console.error(`Failed to remove persisted video ${target.id}`, error);
+      });
+    }
     const clipIdsToRemove = clips.filter((clip) => clip.sourceId === sourceId).map((clip) => clip.id);
 
     setSources((prev) => {
@@ -472,8 +601,14 @@ export default function VideoEditor() {
       setSelectedClips(new Set());
       selectActiveSource(null);
       setClipScope('active');
+      setPersistenceWarning(null);
+      setIsRestoringSources(false);
+      clearVideoStore().catch((error) => {
+        console.error('Failed to clear persisted videos', error);
+      });
       if (typeof window !== 'undefined') {
         localStorage.removeItem(STATE_KEY_V2);
+        localStorage.removeItem(STATE_KEY_V3);
       }
     }
   };
@@ -580,6 +715,47 @@ export default function VideoEditor() {
       textOverlay: clip.textOverlay ? JSON.parse(JSON.stringify(clip.textOverlay)) : null,
     };
     setClips((prev) => [...prev, newClip]);
+  };
+
+  const downloadClip = async (clipId: number) => {
+    if (downloadingClipId !== null) {
+      if (downloadingClipId !== clipId) {
+        alert('Please wait for the current download to finish.');
+      }
+      return;
+    }
+
+    const clip = clips.find((c) => c.id === clipId);
+    if (!clip) return;
+
+    try {
+      setDownloadingClipId(clipId);
+      const blob = await exportClipToBlob(clip, sources);
+
+      const safeName =
+        clip.name
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, '-')
+          .replace(/(^-|-$)/g, '') || 'clip';
+      const fileName = `${safeName}-${clip.id}.webm`;
+      const downloadUrl = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = downloadUrl;
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(downloadUrl), 5000);
+    } catch (error) {
+      console.error('Failed to download clip', error);
+      const message =
+        error instanceof Error
+          ? error.message
+          : 'Unable to export the clip in this browser.';
+      alert(message);
+    } finally {
+      setDownloadingClipId((current) => (current === clipId ? null : current));
+    }
   };
 
   const toggleClipSelection = (clipId: number) => {
@@ -903,6 +1079,24 @@ export default function VideoEditor() {
     return () => clearInterval(interval);
   }, [isRenderDrawerOpen, refreshRenderJobs]);
 
+  const renderPersistenceAlerts = () => {
+    if (!isRestoringSources && !persistenceWarning) return null;
+    return (
+      <div className="space-y-2 mb-4">
+        {isRestoringSources && (
+          <div className="rounded-lg border border-[#0a84ff] bg-[#0a84ff]/10 px-4 py-3 text-sm text-[#dbe9ff]">
+            Restoring imported videos from browser storage…
+          </div>
+        )}
+        {persistenceWarning && (
+          <div className="rounded-lg border border-[#ff9f0a] bg-[#ff9f0a]/10 px-4 py-3 text-sm text-[#ffd699]">
+            {persistenceWarning}
+          </div>
+        )}
+      </div>
+    );
+  };
+
   const statusCallout = (
     <div className="bg-[#1f1f1f] border border-[#333] rounded-xl p-4 text-sm text-[#ddd] mt-4">
       <p className="text-xs uppercase tracking-[0.3em] text-[#777] mb-3">
@@ -965,6 +1159,7 @@ export default function VideoEditor() {
             </div>
           </div>
           {statusCallout}
+          {renderPersistenceAlerts()}
           <VideoImport onVideosLoad={addVideos} />
           <TutorialModal isOpen={isTutorialOpen} onClose={() => setIsTutorialOpen(false)} />
           <IngestConnectModal
@@ -1028,6 +1223,7 @@ export default function VideoEditor() {
           </div>
         </div>
         {statusCallout}
+        {renderPersistenceAlerts()}
 
         <div className="flex flex-col lg:flex-row gap-6">
           <VideoLibrary
@@ -1037,6 +1233,7 @@ export default function VideoEditor() {
             onAddVideos={addVideos}
             onSelectSource={selectActiveSource}
             onRemoveSource={removeSource}
+            isRestoring={isRestoringSources}
           />
 
           <div className="flex-1 flex flex-col gap-5">
@@ -1053,6 +1250,8 @@ export default function VideoEditor() {
                     currentSegmentIndex={currentSegmentIndex}
                     onMetadataLoaded={handleVideoMetadata}
                     onSegmentChange={setCurrentSegmentIndex}
+                    isPlaybackLocked={isPlaybackLocked}
+                    isRestoring={isRestoringSources}
                   />
 
                   <Timeline
@@ -1085,6 +1284,7 @@ export default function VideoEditor() {
                     }
                     onCreateClip={createClip}
                     onExitPreview={exitPreviewMode}
+                    disabled={isPlaybackLocked}
                   />
                 </div>
                 {activeSourceId &&
@@ -1105,6 +1305,7 @@ export default function VideoEditor() {
                   hasActiveSource={Boolean(activeSourceId)}
                   selectedClips={selectedClips}
                   selectedCount={selectedClips.size}
+                  downloadingClipId={downloadingClipId}
                   onScopeChange={setClipScope}
                   onToggleSelection={toggleClipSelection}
                   onPreview={previewClip}
@@ -1114,6 +1315,7 @@ export default function VideoEditor() {
                   onOpenVariations={openVariationPanelFor}
                   onCombineSelected={combineSelectedClips}
                   onClearAll={clearAllClips}
+                  onDownload={downloadClip}
                 />
               </>
             ) : (
